@@ -1,0 +1,2129 @@
+<meta charset="utf-8">
+<title>Tia Motora em Missão! — O jogo do Tuti</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #0b0d16;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: "Courier New", monospace;
+  }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    width: min(100vw, calc((100vh - 34px) * 4 / 3));
+    height: auto;
+    display: block;
+    box-shadow: 0 0 0 3px #f7c948, 0 0 44px rgba(0,0,0,.9);
+  }
+  #rodape {
+    color: #f7c948; font-size: 12px; letter-spacing: 1px;
+    margin-top: 8px; text-align: center; user-select: none;
+  }
+</style>
+
+<canvas id="tela" width="480" height="360"></canvas>
+<div id="rodape">SETAS = MOVER &nbsp;•&nbsp; ESPAÇO = AÇÃO &nbsp;•&nbsp; P = PAUSA &nbsp;•&nbsp; M = SOM</div>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   TIA MOTORA EM MISSÃO! — jogo do Tuti
+   Arquivo único, sem dependências. Basta abrir no navegador.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   CONFIG — mexa nesses números para deixar mais fácil ou mais difícil
+   -------------------------------------------------------------------------- */
+const CONFIG = {
+  nomeMenino: "TUTI",
+  nomeTia: "TIA NUNA",
+  nomeEscola: "ESCOLA PIRATINI",
+
+  vidas: 3,
+  invencivel: 1.6,          // segundos piscando depois de tomar dano
+
+  // ---- MINI-FASE: a manhã em casa (não tem como perder, é pra ambientar) ----
+  acordarPorAperto: 9,      // quanto cada espaço enche a barra de acordar
+  acordarQueda: 7,          // quanto ela desce sozinha por segundo
+  cafeMeta: 6,              // quantas comidinhas ele precisa pegar
+  cafeQueda: 105,           // velocidade da comida caindo
+  cafeIntervalo: 0.95,
+  dentesQtd: 8,             // quantos dentes pra escovar
+  dentesForca: 2.2,         // quão rápido a escova limpa cada dente
+  velEscova: 205,
+  velQuarto: 135,           // velocidade do Tuti andando pelo quarto
+
+  // ---- FASE 1: a corrida pra escola ----
+  distTotal: 7350,          // "tamanho" da rua (maior = fase mais longa). ~35 segundos
+  amigos: 3,                // quantos coleguinhas aparecem no ponto de ônibus
+  velBase: 210,             // velocidade normal
+  velMax: 300,              // segurando a seta pra cima
+  velMin: 145,              // segurando a seta pra baixo
+  velLateral: 235,          // rapidez pra desviar (esquerda/direita)
+  turboVel: 430,
+  turboDur: 0.7,
+  turboRecarga: 3.5,
+  combustivelMax: 100,
+  gastoCombustivel: 2.3,    // por segundo
+  intervaloObstaculo: 1.15, // segundos entre obstáculos
+  intervaloItem: 3.6,       // segundos entre estrelas/gasolina
+  avisoAmigo: 430,          // distância de antecedência do aviso "amigo no ponto"
+
+  // ---- FASE 2: desafios na escola ----
+  velTuti: 118,
+  velMonstro: 72,
+  gritoDur: 2.2,            // quanto tempo os monstrinhos ficam congelados
+  gritoRecarga: 6,
+};
+
+/* --------------------------------------------------------------------------
+   TELA
+   -------------------------------------------------------------------------- */
+const cv = document.getElementById("tela");
+const ctx = cv.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+const W = 480, H = 360;
+const PX = 2;         // tamanho de cada "pixel" dos sprites
+const HUD_H = 44;
+
+/* --------------------------------------------------------------------------
+   PALETA E SPRITES (cada letra = uma cor; "." = transparente)
+   -------------------------------------------------------------------------- */
+const CORES = {
+  ".": null,
+  k: "#12131a", d: "#2b2f3d", b: "#5d6272", c: "#a9afc0", w: "#ffffff",
+  y: "#f7c948", o: "#e8853a", r: "#d9463c", p: "#f2a3c7", s: "#f3c39a",
+  h: "#b0793f", H: "#7a4a24", g: "#3fa34d", G: "#276b32", a: "#3f6fd1",
+  A: "#223a72", l: "#7fc4ff", n: "#c2a06a", e: "#8b5a2b",
+  // "S" é o preto dos sapatos. Fica separado do "k" (olhos, boca, contornos)
+  // pra dar pra trocar só o calçado quando o Tuti está de pijama, descalço.
+  S: "#12131a",
+};
+
+const SPR = {};
+
+SPR.carro = [
+  "...kkkkkkkkkk...",
+  "..kwwddddddwwk..",
+  "..kddddddddddk..",
+  "..kddllllllddk..",
+  "..kdllllllllck..",
+  "..kdllllllllck..",
+  ".kkddddddddddkk.",
+  ".kkddddddddddkk.",
+  "..kddddddddddk..",
+  "..kddddddddddk..",
+  "..kddddddddddk..",
+  "..kddddddddddk..",
+  "..kddddddddddk..",
+  "..kddddddddddk..",
+  "..kddddddddddk..",
+  "..kdllllllllck..",
+  "..kddllllllddk..",
+  "..kddddddddddk..",
+  "..krrddddddrrk..",
+  "...kkkkkkkkkk...",
+];
+// carro que vem na frente = mesmo desenho de cabeça pra baixo (faróis certos)
+SPR.carroFrente = SPR.carro.slice().reverse();
+
+// carro visto de PERFIL, virado pra direita. O SPR.carro é visto de cima e só
+// faz sentido na corrida; nas cenas de lado (título, quarto, casa) usa-se este.
+SPR.carroLado = [
+  "........dddddddddd........",
+  ".....ddddllllllllddd......",
+  "....dlllllllddlllllllld...",
+  "..dddddddddddddddddddddd..",
+  ".rddddddddddddddddddddddw.",
+  ".dddddddddddddddddddddddd.",
+  ".dddddddddddddddddddddddd.",
+  "..dddddddddddddddddddddd..",
+  "...kkkk..........kkkk.....",
+  "..kkcckk........kkcckk....",
+  "..kkcckk........kkcckk....",
+  "...kkkk..........kkkk.....",
+];
+
+SPR.tutiBaixo0 = [
+  "....HHHH....",
+  "...HHHHHH...",
+  "..HHHHHHHH..",
+  "..HssssssH..",
+  "..ssssssss..",
+  "..skssssks..",
+  "..ssssssss..",
+  "..ssskksss..",
+  "...ssssss...",
+  "....ssss....",
+  "..agggggga..",
+  ".aaggggggaa.",
+  ".sagwwwwgas.",
+  ".sggggggggs.",
+  "...AAAAAA...",
+  "...AA..AA...",
+  "...SS..SS...",
+];
+SPR.tutiBaixo1 = SPR.tutiBaixo0.slice(0, 15).concat(["..AAA..AAA..", "..SS....SS.."]);
+
+SPR.tutiCima0 = [
+  "....HHHH....",
+  "...HHHHHH...",
+  "..HHHHHHHH..",
+  "..HHHHHHHH..",
+  "..HHHHHHHH..",
+  "..HHHHHHHH..",
+  "..sHHHHHHs..",
+  "...HHHHHH...",
+  "...ssssss...",
+  "....ssss....",
+  "..agggggga..",
+  ".aaaaaaaaaa.",
+  ".saaaaaaaas.",
+  ".saaaaaaaas.",
+  "...AAAAAA...",
+  "...AA..AA...",
+  "...SS..SS...",
+];
+SPR.tutiCima1 = SPR.tutiCima0.slice(0, 15).concat(["..AAA..AAA..", "..SS....SS.."]);
+
+SPR.tutiLado0 = [
+  "...HHHHH....",
+  "..HHHHHHH...",
+  "..HHHHHsss..",
+  "..HHssssss..",
+  "..Hsssskss..",
+  "..Hssssssk..",
+  "...ssssss...",
+  "....ssss....",
+  "....ssss....",
+  "..aggggggs..",
+  "..aggggggs..",
+  "..aggggggs..",
+  "..aggggggs..",
+  "...gggggg...",
+  "...AAAAAA...",
+  "...AA.AA....",
+  "...SS.SS....",
+];
+SPR.tutiLado1 = SPR.tutiLado0.slice(0, 15).concat(["..AA...AA...", "..SS...SS..."]);
+
+SPR.nuna = [
+  "...hhhhhh...",
+  "..hhhhhhhh..",
+  ".hhhhhhhhhh.",
+  ".hhsssssshh.",
+  ".hssssssssh.",
+  ".hsrrsrrssh.",
+  ".hssssssssh.",
+  ".hsssppsssh.",
+  ".hhsssssshh.",
+  ".hhhhhhhhhh.",
+  ".hwwwwwwwwh.",
+  ".swwwwwwwws.",
+  ".shwwwwwwhs.",
+  ".swwwwwwwws.",
+  "..wwwwwwww..",
+  "..nnnnnnnn..",
+  ".nnnnnnnnnn.",
+  "...ss..ss...",
+  "...ss..ss...",
+  "...ss..ss...",
+  "...kk..kk...",
+];
+
+SPR.monstro = [
+  "...cccccc...",
+  "..cwwccwwc..",
+  ".cwwwccwwwc.",
+  ".cwwwwwwwwc.",
+  ".cwkwwwwkwc.",
+  ".cwwwwwwwwc.",
+  ".cwwkkkkwwc.",
+  ".cwwwwwwwwc.",
+  "..cwwwwwwc..",
+  "..ccwwwwcc..",
+  "...cccccc...",
+  "....cccc....",
+];
+
+SPR.cone = [
+  "....oo....",
+  "....oo....",
+  "...oooo...",
+  "...oooo...",
+  "..wwwwww..",
+  "..wwwwww..",
+  "..oooooo..",
+  ".oooooooo.",
+  ".oooooooo.",
+  "kkkkkkkkkk",
+  "kkkkkkkkkk",
+  ".kkkkkkkk.",
+];
+
+SPR.poca = [
+  "....aaaaaa....",
+  "..aallllllaa..",
+  ".aallwwllllaa.",
+  "aallllllllllaa",
+  "aallllllllllaa",
+  ".allllllwwlla.",
+  "..aallllllaa..",
+  "....aaaaaa....",
+];
+
+SPR.gasolina = [
+  "...kkkk...",
+  "..krrrrk..",
+  ".kkkkkkkk.",
+  ".krrrrrrk.",
+  ".krwwwwrk.",
+  ".krwrrwrk.",
+  ".krwwwwrk.",
+  ".krrrrrrk.",
+  ".krrrrrrk.",
+  ".krrrrrrk.",
+  ".kkkkkkkk.",
+  "..kkkkkk..",
+];
+
+SPR.estrela = [
+  "....y....",
+  "....y....",
+  "...yyy...",
+  "yyyyyyyyy",
+  ".yyyyyyy.",
+  "..yyyyy..",
+  "..yy.yy..",
+  ".yy...yy.",
+  ".y.....y.",
+];
+
+SPR.chave = [
+  ".yyyy.......",
+  "yy..yy......",
+  "yy..yyyyyyyy",
+  "yy..yy..y.y.",
+  "yy..yy......",
+  ".yyyy.......",
+];
+
+SPR.mochila = [
+  "...aaaaaa...",
+  "..aaaaaaaa..",
+  ".aaaaaaaaaa.",
+  ".aAAAAAAAAa.",
+  ".aAwwwwwwAa.",
+  ".aAwyyyywAa.",
+  ".aAwwwwwwAa.",
+  ".aAAAAAAAAa.",
+  ".aAAAAAAAAa.",
+  ".aaaaaaaaaa.",
+  "..aaaaaaaa..",
+  "...k....k...",
+];
+
+SPR.lapis = [
+  "....kk....",
+  "...keek...",
+  "..eeeeee..",
+  "..yyyyyy..",
+  "..yooooy..",
+  "..yyyyyy..",
+  "..yyyyyy..",
+  "..yooooy..",
+  "..yyyyyy..",
+  "..yyyyyy..",
+  "..cccccc..",
+  "..pppppp..",
+];
+
+SPR.lanche = [
+  ".......GG...",
+  "....e..GG...",
+  "....e.......",
+  "..rrrrrrrr..",
+  ".rrrwrrrrrr.",
+  "rrrwrrrrrrrr",
+  "rrrrrrrrrrrr",
+  "rrrrrrrrrrrr",
+  ".rrrrrrrrrr.",
+  ".rrrrrrrrrr.",
+  "..rrrrrrrr..",
+  "...rr..rr...",
+];
+
+/* ---- coisas da mini-fase da manhã ---- */
+
+SPR.despertador = [
+  "..k......k..",
+  ".kkk....kkk.",
+  "kkwwkkkkwwkk",
+  ".kwwwwwwwwk.",
+  "kwwwkwwkwwwk",
+  "kwwwwkwkwwwk",
+  "kwwwwwkwwwwk",
+  "kwwwwwwwwwwk",
+  "kwwwwwwwwwwk",
+  ".kwwwwwwwwk.",
+  "..kkkkkkkk..",
+  "..k......k..",
+];
+
+// só a cabecinha no travesseiro — a coberta é desenhada junto com a cama
+SPR.tutiDormindo = [
+  "...HHHHHH...",
+  "..HHHHHHHH..",
+  ".HHssssssHH.",
+  ".Hskksskks..",   // os "k" são os olhos fechados
+  ".Hssssssss..",
+  "..ssssssss..",
+  "...ssssss...",
+  "....ssss....",
+];
+
+SPR.pao = [
+  "..eeeeee..",
+  ".eeeeeeee.",
+  "ennnnnnnne",
+  "ennnnnnnne",
+  "ennnnnnnne",
+  "ennnnnnnne",
+  ".eeeeeeee.",
+  "..eeeeee..",
+];
+
+SPR.leite = [
+  "cwwwwwwwwc",
+  ".cwwwwwwc.",
+  ".cwwwwwwc.",
+  ".cwwwwwwc.",
+  ".cwwwwwwc.",
+  "..cwwwwc..",
+  "..cwwwwc..",
+  "..cccccc..",
+];
+
+SPR.banana = [
+  "......GG..",
+  ".....yyy..",
+  "....yyy...",
+  "...yyy....",
+  "..yyy.....",
+  ".yyy......",
+  ".yyy......",
+  "..yyy.....",
+];
+
+SPR.bolacha = [
+  "..eeeeee..",
+  ".eekeekee.",
+  "eeeeeeeeee",
+  "ekeeeeekee",
+  "eeeeeeeeee",
+  "eekeeeeeke",
+  ".eeeeeeee.",
+  "..eeeeee..",
+];
+
+SPR.prato = [
+  "wwwwwwwwwwwwwwww",
+  "cwwwwwwwwwwwwwwc",
+  ".cccccccccccccc.",
+  "..cccccccccccc..",
+];
+
+SPR.escova = [    // cabo azul à esquerda, cerdas brancas à direita
+  "...........lwwl.",
+  "..........lwwwwl",
+  "aaaaaaaaaawwwwww",
+  "aaaaaaaaaawwwwww",
+  "..........lwwwwl",
+  "...........lwwl.",
+];
+
+SPR.camiseta = [
+  "gg..gggg..gg",
+  "gggggggggggg",
+  "gggggggggggg",
+  ".gggggggggg.",
+  "..gggggggg..",
+  "..gggggggg..",
+  "..gggggggg..",
+  "..gggggggg..",
+];
+
+SPR.calca = [
+  "..AAAAAAAA..",
+  "..AAAAAAAA..",
+  "..AAAAAAAA..",
+  "..AAA..AAA..",
+  "..AAA..AAA..",
+  "..AAA..AAA..",
+  "..AAA..AAA..",
+  "..AAA..AAA..",
+];
+
+SPR.tenis = [
+  "............",
+  "..SS....SS..",
+  "..SS....SS..",
+  ".SSSS..SSSS.",
+  "SSSSSSSSSSSS",
+  "wwwwwwwwwwww",
+];
+
+// carinha pequena, usada no contador de amigos do HUD
+SPR.carinha = [
+  ".HHHHH.",
+  "HHHHHHH",
+  "HsssssH",
+  "sksssks",
+  "sssksss",
+  ".sssss.",
+];
+
+SPR.coracao = [
+  ".rr.rr.",
+  "rrrrrrr",
+  "rrrrrrr",
+  ".rrrrr.",
+  "..rrr..",
+  "...r...",
+];
+
+/* --------------------------------------------------------------------------
+   DESENHO — utilitários
+   -------------------------------------------------------------------------- */
+function larg(spr) { let m = 0; for (const l of spr) m = Math.max(m, l.length); return m; }
+
+function sprite(spr, x, y, esc, recolor, espelhar) {
+  esc = esc || PX;
+  const largura = larg(spr);
+  for (let j = 0; j < spr.length; j++) {
+    const linha = spr[j];
+    for (let i = 0; i < linha.length; i++) {
+      const ch = linha[i];
+      if (ch === ".") continue;
+      const cor = (recolor && recolor[ch]) || CORES[ch];
+      if (!cor) continue;
+      const col = espelhar ? largura - 1 - i : i;
+      ctx.fillStyle = cor;
+      ctx.fillRect(Math.round(x + col * esc), Math.round(y + j * esc), esc, esc);
+    }
+  }
+}
+
+// desenha centralizado no ponto (cx, cy)
+function spriteC(spr, cx, cy, esc, recolor, espelhar) {
+  esc = esc || PX;
+  sprite(spr, cx - (larg(spr) * esc) / 2, cy - (spr.length * esc) / 2, esc, recolor, espelhar);
+}
+
+function texto(txt, x, y, opc) {
+  opc = opc || {};
+  const tam = opc.tam || 14;
+  ctx.font = (opc.leve ? "" : "bold ") + tam + 'px "Courier New", monospace';
+  ctx.textAlign = opc.align || "center";
+  ctx.textBaseline = "top";
+  if (opc.sombra !== false) {
+    ctx.fillStyle = opc.sombra || "#12131a";
+    ctx.fillText(txt, x + 2, y + 2);
+  }
+  ctx.fillStyle = opc.cor || "#ffffff";
+  ctx.fillText(txt, x, y);
+}
+
+// escreve um texto e desenha um coraçãozinho de pixel do lado
+// (a fonte monoespaçada não tem o glifo ♥, então ele é desenhado à mão)
+function textoCoracao(txt, x, y, opc) {
+  opc = opc || {};
+  const tam = opc.tam || 14;
+  texto(txt, x, y, opc);
+  ctx.font = 'bold ' + tam + 'px "Courier New", monospace';
+  const w = ctx.measureText(txt).width;
+  sprite(SPR.coracao, x + w / 2 + 7, y + tam / 2 - 5, 2);
+}
+
+// versão apagada de qualquer sprite (para itens ainda não coletados no HUD)
+const CINZA = {};
+for (const k in CORES) if (CORES[k]) CINZA[k] = k === "k" ? "#22262f" : "#3a3f4c";
+
+function painel(x, y, w, h, corBorda) {
+  ctx.fillStyle = "rgba(9,11,20,0.9)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = corBorda || "#f7c948";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+}
+
+function barra(x, y, w, h, frac, cor, corFundo) {
+  frac = Math.max(0, Math.min(1, frac));
+  ctx.fillStyle = corFundo || "#1c2030";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = cor;
+  ctx.fillRect(x + 2, y + 2, Math.max(0, (w - 4) * frac), h - 4);
+  ctx.strokeStyle = "#12131a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+}
+
+/* --------------------------------------------------------------------------
+   SOM (WebAudio, sem arquivos)
+   -------------------------------------------------------------------------- */
+const som = { ctx: null, ligado: true };
+
+function acordarAudio() {
+  if (!som.ctx) {
+    try { som.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  }
+  if (som.ctx.state === "suspended") som.ctx.resume();
+}
+
+function nota(freq, atraso, dur, tipo, vol) {
+  if (!som.ligado || !som.ctx) return;
+  const t0 = som.ctx.currentTime + atraso;
+  const osc = som.ctx.createOscillator();
+  const g = som.ctx.createGain();
+  osc.type = tipo || "square";
+  osc.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(vol == null ? 0.05 : vol, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g); g.connect(som.ctx.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.03);
+}
+
+function melodia(notas, tipo, vol) {
+  let t = 0;
+  for (const n of notas) { nota(n[0], t, n[1], tipo, vol); t += n[1]; }
+}
+
+const SFX = {
+  coleta:  () => melodia([[880, .06], [1320, .09]]),
+  item:    () => melodia([[660, .07], [880, .07], [1320, .12]]),
+  dano:    () => melodia([[220, .1], [140, .18]], "sawtooth", .07),
+  turbo:   () => melodia([[300, .05], [460, .05], [700, .12]], "square", .05),
+  grito:   () => melodia([[500, .07], [760, .07], [1000, .16]], "triangle", .07),
+  porta:   () => melodia([[400, .08], [600, .08], [900, .2]]),
+  fase:    () => melodia([[523, .12], [659, .12], [784, .12], [1047, .3]]),
+  vitoria: () => melodia([[523, .14], [659, .14], [784, .14], [1047, .18], [784, .1], [1047, .45]]),
+  fim:     () => melodia([[440, .16], [330, .16], [247, .38]], "sawtooth", .06),
+};
+
+/* --------------------------------------------------------------------------
+   TECLADO
+   -------------------------------------------------------------------------- */
+const teclas = {};
+const apertadas = new Set();
+const ordemSetas = [];          // setas na ordem em que foram pressionadas
+const SETAS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+const BLOQUEAR = SETAS.concat(["Space"]);
+
+addEventListener("keydown", (e) => {
+  if (BLOQUEAR.indexOf(e.code) >= 0) e.preventDefault();
+  acordarAudio();
+  if (!teclas[e.code]) {
+    apertadas.add(e.code);
+    if (SETAS.indexOf(e.code) >= 0) ordemSetas.push(e.code);
+  }
+  teclas[e.code] = true;
+});
+
+addEventListener("keyup", (e) => {
+  teclas[e.code] = false;
+  const i = ordemSetas.indexOf(e.code);
+  if (i >= 0) ordemSetas.splice(i, 1);
+});
+
+addEventListener("blur", () => { for (const k in teclas) teclas[k] = false; ordemSetas.length = 0; });
+
+function foiApertada(code) { return apertadas.has(code); }
+
+/* --------------------------------------------------------------------------
+   ESTADO GERAL
+   -------------------------------------------------------------------------- */
+const jogo = {
+  estado: "TITULO",     // TITULO | FASE1 | INTERVALO | FASE2 | VITORIA | GAMEOVER
+  t: 0,
+  pontos: 0,
+  pontosFase: 0,
+  vidas: CONFIG.vidas,
+  pausado: false,
+  tremor: 0,
+  faseDoGameOver: 1,
+};
+
+function trocarEstado(novo) { jogo.estado = novo; jogo.t = 0; }
+
+function tremer(f) { jogo.tremor = Math.max(jogo.tremor, f || 0.35); }
+
+function perderVida() {
+  jogo.vidas--;
+  SFX.dano();
+  tremer(0.4);
+  if (jogo.vidas <= 0) {
+    jogo.faseDoGameOver = jogo.estado === "FASE1" ? 1 : 2;
+    SFX.fim();
+    trocarEstado("GAMEOVER");
+    return true;
+  }
+  return false;
+}
+
+/* ==========================================================================
+   MINI-FASE — A MANHÃ EM CASA
+   Quatro tarefinhas, uma por tela. Não dá pra perder: é pra ambientar e,
+   de quebra, ensinar os controles antes das fases de verdade.
+     -1 intro    0 acordar (ESPAÇO)   1 café (← →)
+      2 dentes (← →)                  3 vestir (← → + ESPAÇO)   4 sair
+   ========================================================================== */
+const TAREFAS = [
+  { titulo: "HORA DE ACORDAR!", dica: "APERTE ESPAÇO SEM PARAR!" },
+  { titulo: "CAFÉ DA MANHÃ!", dica: "USE ← → PRA PEGAR A COMIDA" },
+  { titulo: "ESCOVAR OS DENTES!", dica: "USE ← → PRA ESFREGAR" },
+  { titulo: "SE ARRUMAR PRA SAIR!", dica: "← → PRA ANDAR, ESPAÇO PRA VESTIR" },
+];
+
+const ROUPAS = [
+  { chave: "camiseta", spr: "camiseta", nome: "CAMISETA", x: 108 },
+  { chave: "calca", spr: "calca", nome: "CALÇA", x: 196 },
+  { chave: "tenis", spr: "tenis", nome: "TÊNIS", x: 284 },
+  { chave: "mochila", spr: "mochila", nome: "MOCHILA", x: 372 },
+];
+
+const COMIDAS = ["pao", "leite", "banana", "bolacha"];
+
+const f0 = {};
+
+function iniciarManha() {
+  f0.tarefa = -1;
+  f0.tt = 0;
+  f0.fim = 0;
+  f0.prog = 0;
+  f0.msg = "";
+  f0.vestido = { camiseta: false, calca: false, tenis: false, mochila: false };
+  f0.tutiX = 240;
+  f0.caindo = [];
+  f0.pegos = 0;
+  f0.tCai = 0.6;
+  f0.dentes = [];
+  for (let i = 0; i < CONFIG.dentesQtd; i++) f0.dentes.push(1);
+  f0.escova = 240;
+  f0.espuma = [];
+  trocarEstado("MANHA");
+}
+
+// cores do Tuti conforme o que ele já vestiu (pijama = tudo claro, descalço)
+function corTuti() {
+  const v = f0.vestido || {};
+  const r = {};
+  if (!v.camiseta) { r.g = "#b9c2d6"; r.G = "#8d97ad"; }
+  if (!v.calca) r.A = "#d3d8e6";
+  if (!v.tenis) r.S = "#f3c39a";
+  if (!v.mochila) r.a = v.camiseta ? "#3fa34d" : "#b9c2d6";
+  return r;
+}
+
+function terminarTarefa(msg) {
+  f0.fim = 1.6;
+  f0.msg = msg;
+  SFX.fase();
+}
+
+function proximaTarefa() {
+  f0.tarefa++;
+  f0.tt = 0;
+  f0.fim = 0;
+  f0.prog = 0;
+  f0.msg = "";
+}
+
+/* ---------- atualização ---------- */
+function atualizarManha(dt) {
+  f0.tt += dt;
+
+  // pausa curta de comemoração entre uma tarefa e outra
+  if (f0.fim > 0) {
+    f0.fim -= dt;
+    if (f0.fim <= 0) proximaTarefa();
+    return;
+  }
+
+  // intro e cena final: só esperam o espaço
+  if (f0.tarefa === -1) {
+    if (f0.tt > 0.5 && foiApertada("Space")) proximaTarefa();
+    return;
+  }
+  if (f0.tarefa >= TAREFAS.length) {
+    if (f0.tt > 0.5 && foiApertada("Space")) iniciarFase1();
+    return;
+  }
+
+  const v = CONFIG.velQuarto * dt;
+
+  if (f0.tarefa === 0) {
+    // ---- ACORDAR: marteladas no espaço ----
+    // a queda vem ANTES do aperto: se viesse depois, ela derrubaria o valor
+    // logo após o clamp em 100 e a barra nunca fecharia
+    f0.prog = Math.max(0, f0.prog - CONFIG.acordarQueda * dt);
+    if (foiApertada("Space")) {
+      f0.prog = Math.min(100, f0.prog + CONFIG.acordarPorAperto);
+      SFX.coleta();
+    }
+    if (f0.prog >= 100) terminarTarefa("BOM DIA, " + CONFIG.nomeMenino + "!");
+
+  } else if (f0.tarefa === 1) {
+    // ---- CAFÉ: pegar a comida que cai ----
+    if (teclas.ArrowLeft) f0.tutiX -= v * 1.5;
+    if (teclas.ArrowRight) f0.tutiX += v * 1.5;
+    f0.tutiX = Math.max(60, Math.min(420, f0.tutiX));
+
+    f0.tCai -= dt;
+    if (f0.tCai <= 0 && f0.pegos + f0.caindo.length < CONFIG.cafeMeta) {
+      f0.caindo.push({
+        x: 70 + Math.random() * 340,
+        y: HUD_H - 20,
+        tipo: COMIDAS[Math.floor(Math.random() * COMIDAS.length)],
+      });
+      f0.tCai = CONFIG.cafeIntervalo;
+    }
+    for (const c of f0.caindo) {
+      c.y += CONFIG.cafeQueda * dt;
+      // o prato fica logo acima da cabeça, em y = 266
+      if (!c.pego && c.y > 248 && c.y < 284 && Math.abs(c.x - f0.tutiX) < 26) {
+        c.pego = true;
+        f0.pegos++;
+        jogo.pontos += 30;
+        SFX.item();
+      }
+    }
+    f0.caindo = f0.caindo.filter((c) => !c.pego && c.y < H + 20);
+    f0.prog = (f0.pegos / CONFIG.cafeMeta) * 100;
+    if (f0.pegos >= CONFIG.cafeMeta) terminarTarefa("QUE DELÍCIA!");
+
+  } else if (f0.tarefa === 2) {
+    // ---- DENTES: esfregar de um lado pro outro ----
+    if (teclas.ArrowLeft) f0.escova -= CONFIG.velEscova * dt;
+    if (teclas.ArrowRight) f0.escova += CONFIG.velEscova * dt;
+    const x0 = 90, larguraDente = 300 / CONFIG.dentesQtd;
+    f0.escova = Math.max(x0, Math.min(x0 + 300, f0.escova));
+
+    const i = Math.max(0, Math.min(CONFIG.dentesQtd - 1, Math.floor((f0.escova - x0) / larguraDente)));
+    const antes = f0.dentes[i];
+    f0.dentes[i] = Math.max(0, f0.dentes[i] - CONFIG.dentesForca * dt);
+    if (antes > 0 && f0.dentes[i] < antes) {
+      for (let n = 0; n < 2; n++) {
+        f0.espuma.push({
+          x: f0.escova + (Math.random() - 0.5) * 24, y: 178,
+          vx: (Math.random() - 0.5) * 60, vy: -40 - Math.random() * 45, vida: 0.8,
+        });
+      }
+    }
+    if (antes > 0.02 && f0.dentes[i] <= 0.02) SFX.coleta();
+
+    for (const e of f0.espuma) { e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 130 * dt; e.vida -= dt; }
+    f0.espuma = f0.espuma.filter((e) => e.vida > 0);
+
+    // conta dentes prontos (e não a média de sujeira): fica claro quanto falta
+    const limpos = f0.dentes.filter((d) => d <= 0.02).length;
+    f0.prog = (limpos / CONFIG.dentesQtd) * 100;
+    // a setinha aponta pro dente sujo MAIS PERTO da escova, não o mais sujo:
+    // senão ela manda a criança atravessar a boca toda a cada dente
+    f0.pior = null;
+    let melhorDist = Infinity;
+    for (let n = 0; n < f0.dentes.length; n++) {
+      if (f0.dentes[n] <= 0.02) continue;
+      const d = Math.abs(x0 + n * larguraDente + larguraDente / 2 - f0.escova);
+      if (d < melhorDist) { melhorDist = d; f0.pior = n; }
+    }
+    if (limpos === CONFIG.dentesQtd) terminarTarefa("QUE SORRISO LINDO!");
+
+  } else if (f0.tarefa === 3) {
+    // ---- VESTIR: andar até cada peça e apertar espaço ----
+    if (teclas.ArrowLeft) { f0.tutiX -= v; f0.olhando = -1; }
+    if (teclas.ArrowRight) { f0.tutiX += v; f0.olhando = 1; }
+    f0.tutiX = Math.max(60, Math.min(420, f0.tutiX));
+    f0.andando = !!(teclas.ArrowLeft || teclas.ArrowRight);
+
+    const perto = ROUPAS.find((p) => !f0.vestido[p.chave] && Math.abs(p.x - f0.tutiX) < 28);
+    f0.perto = perto || null;
+    if (perto && foiApertada("Space")) {
+      f0.vestido[perto.chave] = true;
+      jogo.pontos += 50;
+      SFX.item();
+    }
+    const postas = ROUPAS.filter((p) => f0.vestido[p.chave]).length;
+    f0.prog = (postas / ROUPAS.length) * 100;
+    if (postas === ROUPAS.length) terminarTarefa("TÁ PRONTO PRA ESCOLA!");
+  }
+}
+
+/* ---------- cenários ---------- */
+function desenharQuarto(claro) {
+  ctx.fillStyle = claro ? "#4a6fa5" : "#22304d"; ctx.fillRect(0, 0, W, 300);
+  ctx.fillStyle = claro ? "#3b5c8a" : "#1b2740"; ctx.fillRect(0, 292, W, 8);
+  ctx.fillStyle = claro ? "#a9713e" : "#5b3a1a"; ctx.fillRect(0, 300, W, H - 300);
+  // tábuas do chão
+  ctx.fillStyle = claro ? "#8b5a2b" : "#472d15";
+  for (let x = 0; x < W; x += 40) ctx.fillRect(x, 300, 2, H - 300);
+
+  // janela: uma cena de rua vista de lado, com o carro da tia parado esperando
+  const vx = 322, vy = 92, vw = 104, vh = 80;
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(316, 86, 116, 92);
+  ctx.fillStyle = claro ? "#7fc4ff" : "#101936"; ctx.fillRect(vx, vy, vw, vh);   // céu
+  if (!claro) {
+    ctx.fillStyle = "#f7c948";
+    for (let i = 0; i < 8; i++) ctx.fillRect(vx + (i * 41) % 96, vy + (i * 19) % 40, 2, 2);
+  }
+  ctx.fillStyle = claro ? "#2c5f37" : "#1b3a26";                                 // grama lá fora
+  ctx.fillRect(vx, vy + 50, vw, vh - 50);
+  ctx.fillStyle = claro ? "#3a3f4c" : "#22252f";                                 // rua
+  ctx.fillRect(vx, vy + 58, vw, 18);
+  spriteC(SPR.carroLado, vx + 52, vy + 62, 1);                                   // rodas na rua
+  if (!claro) {   // faróis acesos iluminando a frente
+    ctx.fillStyle = "#fff2b0";
+    ctx.fillRect(vx + 65, vy + 60, 8, 3);
+  }
+  // caixilho: a travessa vertical só na parte de cima, pra não cortar o carro
+  ctx.fillStyle = "#5b3a1a";
+  ctx.fillRect(vx + vw / 2 - 2, vy, 4, 44);
+  ctx.fillRect(vx, vy + 42, vw, 4);
+
+  // pôster da escola na parede
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(40, 86, 76, 56);
+  ctx.fillStyle = "#d9463c"; ctx.fillRect(44, 90, 68, 48);
+  texto("EU AMO", 78, 98, { tam: 9, cor: "#f7c948" });
+  texto("A ESCOLA", 78, 114, { tam: 9, cor: "#f7c948" });
+
+  // cama
+  ctx.fillStyle = "#8b5a2b"; ctx.fillRect(34, 240, 180, 76);
+  ctx.fillStyle = "#a9713e"; ctx.fillRect(34, 240, 180, 8);
+  ctx.fillStyle = "#6b421d"; ctx.fillRect(34, 308, 180, 8);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(42, 248, 62, 32);       // travesseiro
+  ctx.fillStyle = "#3fa34d"; ctx.fillRect(104, 248, 102, 44);     // coberta
+  ctx.fillStyle = "#276b32"; ctx.fillRect(104, 278, 102, 10);
+
+  // mesinha de cabeceira
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(240, 262, 48, 54);
+  ctx.fillStyle = "#8b5a2b"; ctx.fillRect(234, 256, 60, 8);
+  ctx.fillStyle = "#472d15"; ctx.fillRect(248, 282, 32, 4);
+}
+
+function desenharCozinha() {
+  ctx.fillStyle = "#e8dcc0"; ctx.fillRect(0, 0, W, 328);
+  // azulejos
+  ctx.strokeStyle = "#d3c5a4"; ctx.lineWidth = 2;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, HUD_H); ctx.lineTo(x, 320); ctx.stroke(); }
+  for (let y = HUD_H; y < 320; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // armário de parede
+  ctx.fillStyle = "#8b5a2b"; ctx.fillRect(30, 62, 152, 64);
+  ctx.fillStyle = "#a9713e"; ctx.fillRect(34, 66, 70, 56);
+  ctx.fillStyle = "#a9713e"; ctx.fillRect(108, 66, 70, 56);
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(96, 90, 6, 8); ctx.fillRect(110, 90, 6, 8);
+
+  // mesa do café ao fundo, com uma caneca em cima
+  ctx.fillStyle = "#8b5a2b"; ctx.fillRect(324, 252, 130, 12);
+  ctx.fillStyle = "#6b421d"; ctx.fillRect(334, 264, 10, 56); ctx.fillRect(434, 264, 10, 56);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(370, 236, 20, 16);
+  ctx.fillStyle = "#c8c2ad"; ctx.fillRect(390, 240, 6, 8);
+
+  // rodapé e chão
+  ctx.fillStyle = "#a9713e"; ctx.fillRect(0, 320, W, 8);
+  ctx.fillStyle = "#b8a98a"; ctx.fillRect(0, 328, W, H - 328);
+  ctx.fillStyle = "#a2937a";
+  for (let x = 0; x < W; x += 48) ctx.fillRect(x, 328, 2, H - 328);
+}
+
+function desenharBanheiro() {
+  ctx.fillStyle = "#bfe3ef"; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "#a5d2e0"; ctx.lineWidth = 2;
+  for (let x = 0; x < W; x += 32) { ctx.beginPath(); ctx.moveTo(x, HUD_H); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = HUD_H; y < H; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  // torneira e pia embaixo
+  ctx.fillStyle = "#a9afc0";
+  ctx.fillRect(232, 268, 8, 26);              // cano
+  ctx.fillRect(232, 288, 26, 7);              // bico
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(150, 300, 180, 44);
+  ctx.fillStyle = "#dfe8ec"; ctx.fillRect(158, 306, 164, 22);
+  ctx.fillStyle = "#c8d4da"; ctx.fillRect(228, 316, 24, 6);
+}
+
+// a boca ampliada no espelho, com os dentes que vão ficando brancos
+function desenharBoca() {
+  const x0 = 90, w = 300, y0 = 120, h = 110;
+  ctx.fillStyle = "#12131a"; ctx.fillRect(x0 - 12, y0 - 12, w + 24, h + 24);
+  ctx.fillStyle = "#d9463c"; ctx.fillRect(x0 - 8, y0 - 8, w + 16, h + 16);   // lábios
+  ctx.fillStyle = "#7a1f1a"; ctx.fillRect(x0, y0, w, h);                     // dentro da boca
+  const ld = w / CONFIG.dentesQtd;
+  for (let i = 0; i < CONFIG.dentesQtd; i++) {
+    const suj = f0.dentes[i];
+    // amarelado -> branco
+    const r = Math.round(255 - 8 * (1 - suj)), g = Math.round(255 - 40 * suj), b = Math.round(255 - 130 * suj);
+    ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+    ctx.fillRect(x0 + i * ld + 2, y0 + 2, ld - 4, 40);          // dentes de cima
+    ctx.fillRect(x0 + i * ld + 2, y0 + h - 42, ld - 4, 40);     // dentes de baixo
+    ctx.strokeStyle = "#c8c2ad"; ctx.lineWidth = 2;
+    ctx.strokeRect(x0 + i * ld + 3, y0 + 3, ld - 6, 38);
+    ctx.strokeRect(x0 + i * ld + 3, y0 + h - 41, ld - 6, 38);
+  }
+  // setinha piscando em cima do dente mais sujo, pra ele saber pra onde ir
+  if (f0.pior != null && f0.dentes[f0.pior] > 0.02 && Math.floor(jogo.t * 5) % 2 === 0) {
+    const sx = x0 + f0.pior * ld + ld / 2;
+    ctx.fillStyle = "#f7c948";
+    ctx.fillRect(sx - 10, y0 - 34, 20, 8);
+    ctx.fillRect(sx - 6, y0 - 26, 12, 6);
+    ctx.fillRect(sx - 3, y0 - 20, 6, 6);
+  }
+}
+
+/* ---------- desenho ---------- */
+function desenharManha() {
+  const tarefa = f0.tarefa;
+
+  if (tarefa === -1) {
+    // ------- intro: quarto escuro, despertador tocando, tia buzinando -------
+    desenharQuarto(false);
+    sprite(SPR.tutiDormindo, 50, 250, 3);
+    const tremida = Math.sin(jogo.t * 30) * 3;
+    spriteC(SPR.despertador, 264 + tremida, 242, 2);
+    texto("RIIING!", 264, 208, { tam: 13, cor: "#f7c948" });
+
+    painel(0, 44, W, 36);
+    texto("A MANHÃ DO " + CONFIG.nomeMenino, W / 2, 52, { tam: 20, cor: "#f7c948" });
+
+    painel(128, 96, 176, 66, "#f2a3c7");
+    texto(CONFIG.nomeTia + ", LÁ FORA:", 216, 102, { tam: 10, cor: "#f2a3c7" });
+    texto('"BI BI! ' + CONFIG.nomeMenino + "!", 216, 120, { tam: 12 });
+    texto("ACORDA QUE HOJE", 216, 134, { tam: 11 });
+    texto('TEM ESCOLA!"', 216, 146, { tam: 11 });
+
+    if (Math.floor(jogo.t * 2) % 2 === 0)
+      texto("APERTE ESPAÇO PRA COMEÇAR", W / 2, 334, { tam: 14, cor: "#f7c948" });
+    return;
+  }
+
+  if (tarefa >= TAREFAS.length) {
+    // ------- cena final: saindo de casa -------
+    fundoNoite();
+    const CHAO = 322;
+    ctx.fillStyle = "#2c5f37"; ctx.fillRect(0, 290, W, H - 290);
+    ctx.fillStyle = "#3a3f4c"; ctx.fillRect(0, 300, W, 42);       // rua
+    ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 294, W, 6);        // meio-fio
+    // casa, apoiada na calçada
+    ctx.fillStyle = "#d9cfae"; ctx.fillRect(20, 168, 130, 126);
+    ctx.fillStyle = "#a8402f"; ctx.fillRect(10, 150, 150, 22);
+    ctx.fillStyle = "#5b3a1a"; ctx.fillRect(58, 224, 46, 70);     // porta aberta
+    ctx.fillStyle = "#2b1a0c"; ctx.fillRect(64, 230, 34, 64);
+    ctx.fillStyle = "#7fc4ff"; ctx.fillRect(112, 190, 26, 24);    // janelinha
+    spriteC(SPR.carroLado, 356, CHAO - 12, 2);
+    spriteC(SPR.nuna, 262, CHAO - 21, 2);
+    spriteC(SPR.tutiBaixo0, 150, CHAO - 17, 2);
+
+    texto("PRONTO PRA ESCOLA!", W / 2, HUD_H + 10, { tam: 22, cor: "#f7c948" });
+    painel(70, 96, 340, 48, "#f2a3c7");
+    texto('"BORA, ' + CONFIG.nomeMenino + '! ENTRA NO CARRO', W / 2, 102, { tam: 12, cor: "#f2a3c7" });
+    texto('QUE A GENTE TÁ ATRASADO!"', W / 2, 118, { tam: 12, cor: "#f2a3c7" });
+    if (Math.floor(jogo.t * 2) % 2 === 0)
+      texto("ESPAÇO = COMEÇAR A CORRIDA", W / 2, 332, { tam: 14, cor: "#ffffff" });
+    return;
+  }
+
+  if (tarefa === 0) {
+    // ------- acordar -------
+    const claro = f0.prog > 55;
+    desenharQuarto(claro);
+    const tremida = f0.prog < 100 ? Math.sin(jogo.t * 30) * 3 : 0;
+    spriteC(SPR.despertador, 264 + tremida, 242, 2);
+
+    if (f0.prog < 30) {
+      sprite(SPR.tutiDormindo, 50, 250, 3);
+      texto("ZZZzzz...", 150, 212, { tam: 14, cor: "#c8c2ad" });
+    } else if (f0.prog < 62) {
+      // olhos abertos: os "k" (olhos fechados) viram pele e aparecem duas pupilas
+      sprite(SPR.tutiDormindo, 50, 250, 3, { k: "#f3c39a" });
+      ctx.fillStyle = "#12131a";
+      ctx.fillRect(50 + 3 * 3, 250 + 3 * 3, 3, 3);
+      ctx.fillRect(50 + 7 * 3, 250 + 3 * 3, 3, 3);
+      texto("HMMM...?", 150, 212, { tam: 14, cor: "#f7c948" });
+    } else if (f0.prog < 100) {
+      spriteC(SPR.tutiBaixo0, 92, 236, 3, corTuti());    // sentado na cama
+      texto("QUASE LÁ!", 200, 200, { tam: 15, cor: "#f7c948" });
+    } else {
+      spriteC(SPR.tutiBaixo0, 150, 274, 3, corTuti());   // de pé ao lado da cama
+    }
+
+  } else if (tarefa === 1) {
+    // ------- café da manhã -------
+    desenharCozinha();
+    for (const c of f0.caindo) spriteC(SPR[c.tipo], c.x, c.y, 2);
+    spriteC(SPR.tutiBaixo0, f0.tutiX, 302, 3, corTuti());
+    spriteC(SPR.prato, f0.tutiX, 266, 3);
+    painel(W / 2 - 64, 332, 128, 24);
+    texto("CAFÉ: " + f0.pegos + "/" + CONFIG.cafeMeta, W / 2, 338, { tam: 13, cor: "#f7c948" });
+
+  } else if (tarefa === 2) {
+    // ------- escovar os dentes -------
+    desenharBanheiro();
+    desenharBoca();
+    for (const e of f0.espuma) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(e.x | 0, e.y | 0, 4, 4);
+    }
+    const balanco = Math.sin(jogo.t * 22) * 3;
+    spriteC(SPR.escova, f0.escova + balanco, 175, 3);   // dentro da boca, esfregando
+    spriteC(SPR.tutiBaixo0, 54, 296, 3, corTuti());
+
+  } else if (tarefa === 3) {
+    // ------- se arrumar -------
+    desenharQuarto(true);
+    // as roupas ficam penduradas acima da cama, senão o Tuti passa por cima delas
+    for (const p of ROUPAS) {
+      if (f0.vestido[p.chave]) continue;
+      const flut = Math.sin(jogo.t * 3 + p.x) * 2;
+      ctx.fillStyle = "#5d6272"; ctx.fillRect(p.x - 2, 186, 4, 10);
+      spriteC(SPR[p.spr], p.x, 212 + flut, 3);
+      if (f0.perto === p && Math.floor(jogo.t * 5) % 2 === 0) {
+        ctx.fillStyle = "#f7c948";               // setinha apontando pra peça
+        ctx.fillRect(p.x - 3, 238, 6, 8);
+        ctx.fillRect(p.x - 7, 234, 14, 5);
+      }
+    }
+    const q = f0.andando ? Math.floor(jogo.t * 8) % 2 : 0;
+    spriteC(q ? SPR.tutiLado1 : SPR.tutiLado0, f0.tutiX, 300, 3, corTuti(), f0.olhando === -1);
+    if (f0.perto) {
+      painel(f0.tutiX - 46, 248, 92, 22, "#f7c948");
+      texto("ESPAÇO!", f0.tutiX, 252, { tam: 12, cor: "#f7c948" });
+    }
+  }
+
+  // ------- comemoração no fim da tarefa -------
+  if (f0.fim > 0) {
+    ctx.fillStyle = "rgba(9,11,20,0.55)"; ctx.fillRect(0, 0, W, H);
+    painel(50, 150, 380, 56);
+    texto(f0.msg, W / 2, 166, { tam: 22, cor: "#f7c948" });
+  }
+
+  desenharHudManha();
+}
+
+function desenharHudManha() {
+  painel(0, 0, W, HUD_H);
+  const t = TAREFAS[f0.tarefa];
+  texto("TAREFA " + (f0.tarefa + 1) + "/" + TAREFAS.length, 10, 6, { tam: 10, align: "left", cor: "#f3c39a" });
+  texto(t.titulo, 10, 20, { tam: 15, align: "left", cor: "#f7c948" });
+  texto(t.dica, 470, 6, { tam: 10, align: "right", cor: "#c8c2ad" });
+  barra(300, 20, 170, 16, f0.prog / 100, "#3fa34d");
+}
+
+/* ==========================================================================
+   FASE 1 — A CORRIDA PRA ESCOLA
+   ========================================================================== */
+const ESTRADA_X0 = 80, ESTRADA_X1 = 400;
+const FAIXAS = [120, 200, 280, 360];            // centros das 4 faixas (amigos e coletáveis)
+// posições onde nascem os obstáculos. Precisa cobrir o meio da pista também,
+// senão o jogador descobre que ficar parado no centro nunca bate em nada.
+const SLOTS = [120, 180, 240, 300, 360];
+
+// a corrida é dividida em 3 pedaços, cada um com cara e obstáculos próprios
+const TRECHOS = [
+  {
+    nome: "BAIRRO", aviso: "SAINDO DE CASA!",
+    grama: "#2c5f37", asfalto: "#3a3f4c", faixa: "#f0e6c0",
+    deco: "casa", ritmo: 1.3,
+    pesos: [["cone", 0.55], ["poca", 0.25], ["carro", 0.20]],
+  },
+  {
+    nome: "AVENIDA", aviso: "AVENIDA MOVIMENTADA!",
+    grama: "#4d5261", asfalto: "#33384a", faixa: "#f0e6c0",
+    deco: "predio", ritmo: 0.92,
+    pesos: [["cone", 0.20], ["poca", 0.15], ["carro", 0.65]],
+  },
+  {
+    nome: "RUA DA ESCOLA", aviso: "CHUVA! CUIDADO COM AS POÇAS!",
+    grama: "#38553f", asfalto: "#2c3242", faixa: "#d9cfae",
+    deco: "arvore", ritmo: 1.05, chuva: true,
+    pesos: [["cone", 0.25], ["poca", 0.50], ["carro", 0.25]],
+  },
+];
+
+// os coleguinhas do Tuti — mesmo desenho dele, com outras cores
+const AMIGOS = [
+  { nome: "JOÃO", cor: { g: "#f7c948", G: "#c08f14", H: "#12131a", A: "#2b2f3d" } },
+  { nome: "MARIA", cor: { g: "#f2a3c7", G: "#c26e95", H: "#b0793f", A: "#3f6fd1" } },
+  { nome: "PEDRO", cor: { g: "#7fc4ff", G: "#3f6fd1", H: "#7a4a24", A: "#2b2f3d" } },
+];
+
+const f1 = {};
+
+function trechoDe(dist) {
+  return Math.min(TRECHOS.length - 1, Math.floor(dist / (CONFIG.distTotal / TRECHOS.length)));
+}
+
+function iniciarFase1() {
+  jogo.pontosFase = jogo.pontos;
+  jogo.vidas = CONFIG.vidas;
+  f1.carroX = 240;
+  f1.carroY = 280;
+  f1.vel = CONFIG.velBase;
+  f1.dist = 0;
+  f1.combustivel = CONFIG.combustivelMax;
+  f1.obstaculos = [];
+  f1.coletaveis = [];
+  f1.tSpawn = 1.2;
+  f1.tItem = 2.0;
+  f1.invenc = 0;
+  f1.turbo = 0;
+  f1.turboCd = 0;
+  f1.chegou = false;
+  f1.chegouT = 0;
+  f1.aviso = "";
+  f1.avisoT = 0;
+  f1.trecho = 0;
+
+  // um coleguinha por trecho, esperando no ponto de ônibus na beirada da pista
+  const pedaco = CONFIG.distTotal / CONFIG.amigos;
+  f1.amigos = [];
+  for (let i = 0; i < CONFIG.amigos; i++) {
+    f1.amigos.push({
+      idx: i,
+      distAlvo: (i + 0.55) * pedaco,
+      x: i % 2 === 0 ? FAIXAS[0] : FAIXAS[3],
+      y: -120,
+      nascido: false, pego: false, perdido: false, avisado: false,
+    });
+  }
+  trocarEstado("FASE1");
+}
+
+function avisoF1(txt, dur) { f1.aviso = txt; f1.avisoT = dur || 2; }
+
+function amigosPegos() { return f1.amigos.filter((a) => a.pego).length; }
+
+// faixas onde tem coleguinha descendo (pra não nascer obstáculo em cima dele)
+function faixasOcupadas() {
+  return f1.amigos.filter((a) => a.nascido && !a.pego && a.y < H).map((a) => a.x);
+}
+
+function sortearTipo(pesos) {
+  let s = Math.random();
+  for (const p of pesos) { s -= p[1]; if (s <= 0) return p[0]; }
+  return pesos[0][0];
+}
+
+function nascerObstaculo() {
+  const t = TRECHOS[f1.trecho];
+  const ocupadas = faixasOcupadas();
+  // nunca nasce em cima de um coleguinha (nem no slot vizinho, senão fica impossível pegar)
+  let livres = SLOTS.filter((x) => !ocupadas.some((o) => Math.abs(o - x) < 61));
+  if (!livres.length) return;
+  const prog = f1.dist / CONFIG.distTotal;
+  // no máximo 2 de uma vez, e nunca em slots vizinhos: sempre sobra um vão pra passar
+  const quantos = prog > 0.35 && livres.length > 3 && Math.random() < 0.45 ? 2 : 1;
+  for (let n = 0; n < quantos; n++) {
+    if (!livres.length) break;
+    const x = livres[Math.floor(Math.random() * livres.length)];
+    livres = livres.filter((s) => Math.abs(s - x) > 61);
+    const tipo = sortearTipo(t.pesos);
+    f1.obstaculos.push({
+      tipo: tipo, x: x, y: -70,
+      velRel: tipo === "carro" ? -95 : 0,
+    });
+  }
+}
+
+function nascerColetavel() {
+  const x = FAIXAS[Math.floor(Math.random() * FAIXAS.length)];
+  const tipo = f1.combustivel < 45 || Math.random() < 0.4 ? "gasolina" : "estrela";
+  f1.coletaveis.push({ tipo: tipo, x: x, y: -40 });
+}
+
+function caixaObstaculo(o) {
+  if (o.tipo === "cone") return { w: 20, h: 24 };
+  if (o.tipo === "poca") return { w: 28, h: 16 };
+  return { w: 32, h: 40 };
+}
+
+function bateu(ax, ay, aw, ah, bx, by, bw, bh) {
+  return Math.abs(ax - bx) * 2 < aw + bw && Math.abs(ay - by) * 2 < ah + bh;
+}
+
+function atualizarFase1(dt) {
+  // ------- chegada na escola -------
+  if (f1.chegou) {
+    f1.chegouT += dt;
+    f1.dist += Math.max(0, CONFIG.velBase * (1 - f1.chegouT / 1.6)) * dt;
+    if (f1.carroY > 235) f1.carroY -= 40 * dt;
+    for (const o of f1.obstaculos) o.y += 200 * dt;
+    f1.obstaculos = f1.obstaculos.filter((o) => o.y < H + 60);
+    if (f1.chegouT > 3.4) {
+      jogo.pontos += 500 + amigosPegos() * 200;
+      SFX.fase();
+      trocarEstado("INTERVALO");
+    }
+    return;
+  }
+
+  // ------- velocidade e turbo -------
+  if (foiApertada("Space") && f1.turboCd <= 0) {
+    f1.turbo = CONFIG.turboDur;
+    f1.turboCd = CONFIG.turboRecarga;
+    SFX.turbo();
+  }
+  f1.turboCd = Math.max(0, f1.turboCd - dt);
+
+  let vel = CONFIG.velBase;
+  if (teclas.ArrowUp) vel = CONFIG.velMax;
+  else if (teclas.ArrowDown) vel = CONFIG.velMin;
+  if (f1.turbo > 0) { vel = CONFIG.turboVel; f1.turbo -= dt; }
+  f1.vel = vel;
+
+  // ------- movimento lateral -------
+  if (teclas.ArrowLeft) f1.carroX -= CONFIG.velLateral * dt;
+  if (teclas.ArrowRight) f1.carroX += CONFIG.velLateral * dt;
+  f1.carroX = Math.max(ESTRADA_X0 + 20, Math.min(ESTRADA_X1 - 20, f1.carroX));
+
+  // ------- distância, combustível, pontos -------
+  f1.dist += vel * dt;
+  jogo.pontos += vel * dt * 0.08;
+  f1.combustivel -= CONFIG.gastoCombustivel * dt;
+  if (f1.combustivel <= 0) {
+    f1.combustivel = 45;
+    avisoF1("ACABOU A GASOLINA!");
+    if (perderVida()) return;
+    f1.invenc = CONFIG.invencivel;
+  }
+
+  // ------- mudou de trecho? -------
+  const novoTrecho = trechoDe(f1.dist);
+  if (novoTrecho !== f1.trecho) {
+    f1.trecho = novoTrecho;
+    avisoF1(TRECHOS[novoTrecho].aviso, 2.8);
+    SFX.fase();
+  }
+
+  // ------- coleguinhas no ponto de ônibus -------
+  for (const a of f1.amigos) {
+    if (a.pego || a.perdido) continue;
+
+    // avisa com antecedência de que lado ele vai aparecer
+    if (!a.avisado && f1.dist >= a.distAlvo - CONFIG.avisoAmigo) {
+      a.avisado = true;
+      avisoF1("AMIGO NO PONTO À " + (a.x < 240 ? "ESQUERDA" : "DIREITA") + "!", 2.6);
+      SFX.coleta();
+    }
+    if (!a.nascido) {
+      if (f1.dist >= a.distAlvo) {
+        a.nascido = true;
+        a.y = -120;
+        f1.tSpawn = Math.max(f1.tSpawn, 1.3);   // dá um respiro pra ele conseguir chegar
+      }
+      continue;
+    }
+    a.y += vel * dt;
+    if (a.y > H + 60) { a.perdido = true; continue; }
+    if (bateu(f1.carroX, f1.carroY, 40, 48, a.x, a.y, 24, 30)) {
+      a.pego = true;
+      jogo.pontos += 150;
+      SFX.item();
+      avisoF1(AMIGOS[a.idx].nome + " ENTROU NO CARRO!", 2);
+    }
+  }
+
+  // ------- nascimento -------
+  f1.tSpawn -= dt;
+  if (f1.tSpawn <= 0) {
+    nascerObstaculo();
+    const prog = f1.dist / CONFIG.distTotal;
+    f1.tSpawn = CONFIG.intervaloObstaculo * TRECHOS[f1.trecho].ritmo * (1 - prog * 0.25) + Math.random() * 0.4;
+  }
+  f1.tItem -= dt;
+  if (f1.tItem <= 0) { nascerColetavel(); f1.tItem = CONFIG.intervaloItem + Math.random() * 1.6; }
+
+  // ------- mover e colidir -------
+  f1.invenc = Math.max(0, f1.invenc - dt);
+  if (f1.avisoT > 0) f1.avisoT -= dt;
+
+  for (const o of f1.obstaculos) o.y += (vel + o.velRel) * dt;
+  f1.obstaculos = f1.obstaculos.filter((o) => o.y < H + 80 && o.y > -220);
+
+  for (const o of f1.obstaculos) {
+    if (o.batido) continue;
+    const cx = caixaObstaculo(o);
+    if (bateu(f1.carroX, f1.carroY, 22, 30, o.x, o.y, cx.w - 6, cx.h - 6)) {
+      o.batido = true;
+      if (f1.invenc > 0) continue;
+      f1.invenc = CONFIG.invencivel;
+      avisoF1(o.tipo === "poca" ? "CUIDADO COM A POÇA!" : "AI! DESVIA!");
+      if (perderVida()) return;
+    }
+  }
+
+  for (const c of f1.coletaveis) c.y += vel * dt;
+  for (const c of f1.coletaveis) {
+    if (c.pego) continue;
+    if (bateu(f1.carroX, f1.carroY, 34, 44, c.x, c.y, 22, 24)) {
+      c.pego = true;
+      if (c.tipo === "gasolina") {
+        f1.combustivel = Math.min(CONFIG.combustivelMax, f1.combustivel + 32);
+        jogo.pontos += 20;
+        SFX.coleta();
+      } else {
+        jogo.pontos += 60;
+        SFX.item();
+      }
+    }
+  }
+  f1.coletaveis = f1.coletaveis.filter((c) => !c.pego && c.y < H + 40);
+
+  if (f1.dist >= CONFIG.distTotal) { f1.chegou = true; f1.chegouT = 0; }
+}
+
+function desenharEscola(x, y, w, h) {
+  // corpo
+  ctx.fillStyle = "#d9cfae"; ctx.fillRect(x, y + 26, w, h - 26);
+  ctx.fillStyle = "#c0b492"; ctx.fillRect(x, y + h - 14, w, 14);
+  // telhado
+  ctx.fillStyle = "#a8402f";
+  ctx.fillRect(x - 10, y + 12, w + 20, 16);
+  ctx.fillStyle = "#c9503a";
+  ctx.fillRect(x - 6, y, w + 12, 14);
+  // placa
+  ctx.fillStyle = "#2b3d63"; ctx.fillRect(x + w / 2 - 78, y + 34, 156, 20);
+  texto(CONFIG.nomeEscola, x + w / 2, y + 38, { tam: 12, cor: "#f7c948" });
+  // janelas
+  for (let i = 0; i < 4; i++) {
+    const jx = x + 14 + i * (w - 28) / 4;
+    if (i === 1 || i === 2) continue;
+    ctx.fillStyle = "#2b3d63"; ctx.fillRect(jx, y + 62, 30, 26);
+    ctx.fillStyle = "#7fc4ff"; ctx.fillRect(jx + 3, y + 65, 24, 20);
+  }
+  // portão
+  ctx.fillStyle = "#2b3d63"; ctx.fillRect(x + w / 2 - 30, y + 60, 60, h - 60);
+  ctx.fillStyle = "#3f6fd1";
+  for (let i = 0; i < 5; i++) ctx.fillRect(x + w / 2 - 26 + i * 11, y + 64, 5, h - 68);
+}
+
+// cenário das laterais, muda conforme o trecho
+function desenharDeco(tipo, x, y) {
+  if (tipo === "casa") {
+    ctx.fillStyle = "#d9cfae"; ctx.fillRect(x - 22, y + 12, 44, 32);
+    ctx.fillStyle = "#a8402f"; ctx.fillRect(x - 26, y, 52, 14);
+    ctx.fillStyle = "#c9503a"; ctx.fillRect(x - 22, y + 12, 44, 5);
+    ctx.fillStyle = "#7fc4ff"; ctx.fillRect(x - 15, y + 22, 12, 12);
+    ctx.fillStyle = "#5b3a1a"; ctx.fillRect(x + 5, y + 24, 12, 20);
+  } else if (tipo === "predio") {
+    ctx.fillStyle = "#4a4f60"; ctx.fillRect(x - 24, y - 26, 48, 74);
+    ctx.fillStyle = "#5d6272"; ctx.fillRect(x - 24, y - 26, 48, 6);
+    for (let a = 0; a < 4; a++) {
+      for (let b = 0; b < 3; b++) {
+        ctx.fillStyle = (a + b + Math.floor(y)) % 3 === 0 ? "#f7c948" : "#2a2f3d";
+        ctx.fillRect(x - 17 + b * 14, y - 16 + a * 16, 9, 10);
+      }
+    }
+  } else {
+    ctx.fillStyle = "#5b3a1a"; ctx.fillRect(x - 4, y + 26, 8, 18);
+    ctx.fillStyle = "#276b32"; ctx.fillRect(x - 20, y, 40, 30);
+    ctx.fillStyle = "#3fa34d"; ctx.fillRect(x - 16, y + 3, 32, 20);
+  }
+}
+
+// poste do ponto de ônibus, na calçada ao lado do coleguinha
+function desenharPonto(x, y) {
+  ctx.fillStyle = "#5d6272"; ctx.fillRect(x - 2, y, 4, 34);
+  ctx.fillStyle = "#3f6fd1"; ctx.fillRect(x - 14, y - 16, 28, 18);
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(x - 11, y - 13, 22, 12);
+  ctx.fillStyle = "#12131a"; ctx.fillRect(x - 8, y - 9, 16, 4);
+}
+
+function desenharFase1() {
+  const tr = TRECHOS[f1.trecho];
+
+  // tudo do mundo fica preso abaixo do HUD (senão obstáculos aparecem por trás dele)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, HUD_H, W, H - HUD_H);
+  ctx.clip();
+
+  // grama / calçada
+  ctx.fillStyle = tr.grama; ctx.fillRect(0, HUD_H, W, H - HUD_H);
+  // asfalto
+  ctx.fillStyle = tr.asfalto; ctx.fillRect(ESTRADA_X0, HUD_H, ESTRADA_X1 - ESTRADA_X0, H - HUD_H);
+  // meio-fio
+  const off = f1.dist % 40;
+  for (let y = HUD_H - 40 + off; y < H; y += 40) {
+    ctx.fillStyle = "#e8e8e8"; ctx.fillRect(ESTRADA_X0 - 8, y, 8, 20);
+    ctx.fillStyle = "#d9463c"; ctx.fillRect(ESTRADA_X0 - 8, y + 20, 8, 20);
+    ctx.fillStyle = "#e8e8e8"; ctx.fillRect(ESTRADA_X1, y, 8, 20);
+    ctx.fillStyle = "#d9463c"; ctx.fillRect(ESTRADA_X1, y + 20, 8, 20);
+  }
+  // faixas tracejadas
+  ctx.fillStyle = tr.faixa;
+  for (const dx of [160, 240, 320]) {
+    for (let y = HUD_H - 60 + (f1.dist % 60); y < H; y += 60) ctx.fillRect(dx - 2, y, 4, 28);
+  }
+  // cenário das laterais
+  const offA = f1.dist % 130;
+  for (let y = HUD_H - 130 + offA; y < H + 80; y += 130) {
+    desenharDeco(tr.deco, 36, y);
+    desenharDeco(tr.deco, 444, y);
+  }
+
+  // escola chegando
+  if (f1.chegou) {
+    const p = Math.min(1, f1.chegouT / 1.7);
+    const ey = -250 + p * 300;
+    desenharEscola(70, ey, 340, 190);
+  }
+
+  // coleguinhas esperando no ponto
+  for (const a of f1.amigos) {
+    if (!a.nascido || a.pego || a.y > H + 40) continue;
+    desenharPonto(a.x < 240 ? ESTRADA_X0 - 32 : ESTRADA_X1 + 32, a.y - 24);
+    const pulo = Math.abs(Math.sin(jogo.t * 6)) * 3;
+    spriteC(SPR.tutiBaixo0, a.x, a.y - pulo, 2, AMIGOS[a.idx].cor);
+    // setinha piscando pra ele enxergar
+    if (Math.floor(jogo.t * 6) % 2 === 0) {
+      ctx.fillStyle = "#f7c948";
+      ctx.fillRect(a.x - 5, a.y - 34, 10, 5);
+      ctx.fillRect(a.x - 2, a.y - 29, 4, 5);
+    }
+  }
+
+  // coletáveis
+  for (const c of f1.coletaveis) {
+    if (c.tipo === "gasolina") spriteC(SPR.gasolina, c.x, c.y, 2);
+    else spriteC(SPR.estrela, c.x, c.y, 2);
+  }
+
+  // obstáculos
+  for (const o of f1.obstaculos) {
+    if (o.tipo === "cone") spriteC(SPR.cone, o.x, o.y, 2);
+    else if (o.tipo === "poca") spriteC(SPR.poca, o.x, o.y, 2);
+    else spriteC(SPR.carroFrente, o.x, o.y, 2, { d: "#c9503a", c: "#f0b8a8" });
+  }
+
+  // rastro do turbo
+  if (f1.turbo > 0) {
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = i % 2 ? "#f7c948" : "#e8853a";
+      ctx.fillRect(f1.carroX - 12 + Math.random() * 24, f1.carroY + 22 + i * 7, 5, 6);
+    }
+  }
+
+  // carro do jogador
+  const piscando = f1.invenc > 0 && Math.floor(f1.invenc * 12) % 2 === 0;
+  if (!piscando) spriteC(SPR.carro, f1.carroX, f1.carroY, 2);
+
+  // chuva no último trecho
+  if (tr.chuva) {
+    ctx.fillStyle = "rgba(96,132,200,0.16)";
+    ctx.fillRect(0, HUD_H, W, H - HUD_H);
+    ctx.fillStyle = "rgba(190,225,255,0.55)";
+    for (let i = 0; i < 70; i++) {
+      const x = (i * 71 + f1.dist * 0.6) % W;
+      const y = HUD_H + ((i * 47 + f1.dist * 2.6) % (H - HUD_H));
+      ctx.fillRect(x | 0, y | 0, 1, 8);
+    }
+  }
+
+  // aviso flutuante
+  if (f1.avisoT > 0) {
+    ctx.font = 'bold 16px "Courier New", monospace';
+    const lt = ctx.measureText(f1.aviso).width + 24;
+    painel(W / 2 - lt / 2, 112, lt, 28);
+    texto(f1.aviso, W / 2, 118, { tam: 16, cor: "#f7c948" });
+  }
+
+  if (f1.chegou) {
+    // os amigos que ele pegou descem do carro
+    let n = 0;
+    for (const a of f1.amigos) {
+      if (!a.pego) continue;
+      spriteC(SPR.tutiBaixo0, f1.carroX + 34 + n * 26, f1.carroY + 6, 2, AMIGOS[a.idx].cor);
+      n++;
+    }
+    texto("CHEGAMOS NA ESCOLA!", W / 2, 250, { tam: 20, cor: "#f7c948" });
+  } else if (f1.turboCd <= 0) {
+    texto("ESPAÇO = TURBO!", W / 2, H - 26, { tam: 12, cor: "#f7c948" });
+  }
+
+  ctx.restore();
+  desenharHudFase1();
+}
+
+function desenharCoracoes(x, y) {
+  for (let i = 0; i < CONFIG.vidas; i++) {
+    const cheio = i < jogo.vidas;
+    sprite(SPR.coracao, x + i * 18, y, 2, cheio ? null : { r: "#3a3f4c" });
+  }
+}
+
+function desenharHudFase1() {
+  painel(0, 0, W, HUD_H);
+  desenharCoracoes(10, 16);
+
+  texto("GASOLINA", 82, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  const frac = f1.combustivel / CONFIG.combustivelMax;
+  barra(82, 19, 116, 16, frac, frac < 0.25 ? "#d9463c" : "#3fa34d");
+
+  texto(TRECHOS[f1.trecho].nome, 210, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  barra(210, 19, 110, 16, f1.dist / CONFIG.distTotal, "#f7c948");
+
+  texto("AMIGOS", 332, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  for (let i = 0; i < f1.amigos.length; i++) {
+    sprite(SPR.carinha, 332 + i * 17, 20, 2, f1.amigos[i].pego ? AMIGOS[i].cor : CINZA);
+  }
+
+  texto("PONTOS", 470, 4, { tam: 10, align: "right", cor: "#f3c39a" });
+  texto(String(Math.floor(jogo.pontos)).padStart(6, "0"), 470, 17, { tam: 18, align: "right", cor: "#f7c948" });
+}
+
+/* ==========================================================================
+   FASE 2 — DESAFIOS NA ESCOLA
+   ========================================================================== */
+const TILE = 24;
+const MAPA_Y = 48;
+const MAPA = [
+  "####################",
+  "#..................#",
+  "#.###.####.###.###.#",
+  "#.###....#.###.###.#",
+  "#.###.####.###.###.#",
+  "#..................#",
+  "#.###.####.###.....#",
+  "#.###.####.....###.#",
+  "#.###.####.###.###.#",
+  "#..................#",
+  "#.....####.###.###.#",
+  "#..................#",
+  "####################",
+];
+const MAPA_COLS = MAPA[0].length;
+const MAPA_ROWS = MAPA.length;
+
+// posições em coluna/linha
+const POS = {
+  inicio: { c: 1, r: 1 },
+  nuna: { c: 5, r: 5 },
+  porta: { c: 18, r: 11 },
+  lapis: { c: 8, r: 3 },
+  chave: { c: 16, r: 6 },
+  mochila: { c: 12, r: 7 },
+  lanche: { c: 3, r: 10 },
+};
+
+function cx(c) { return c * TILE + TILE / 2; }
+function cy(r) { return MAPA_Y + r * TILE + TILE / 2; }
+
+const ITENS = [
+  { chave: "mochila", spr: "mochila", nome: "MOCHILA" },
+  { chave: "lapis", spr: "lapis", nome: "LÁPIS" },
+  { chave: "lanche", spr: "lanche", nome: "LANCHE" },
+  { chave: "chave", spr: "chave", nome: "CHAVE" },
+];
+
+const f2 = {};
+
+function iniciarFase2() {
+  jogo.pontosFase = jogo.pontos;
+  jogo.vidas = CONFIG.vidas;
+  f2.x = cx(POS.inicio.c);
+  f2.y = cy(POS.inicio.r);
+  f2.dir = "baixo";
+  f2.anim = 0;
+  f2.andando = false;
+  f2.pegos = { mochila: false, lapis: false, lanche: false, chave: false };
+  f2.invenc = 0;
+  f2.grito = 0;
+  f2.gritoCd = 0;
+  f2.msg = "";
+  f2.msgT = 0;
+  f2.nunaFalou = false;
+  f2.monstros = [
+    { eixo: "h", x: cx(9), y: cy(9), min: cx(2), max: cx(17), dir: 1 },
+    { eixo: "v", x: cx(10), y: cy(3), min: cy(1), max: cy(11), dir: 1 },
+  ];
+  trocarEstado("FASE2");
+}
+
+function msgF2(txt, dur) { f2.msg = txt; f2.msgT = dur || 2.4; }
+
+function paredeEm(px, py) {
+  const c = Math.floor(px / TILE);
+  const r = Math.floor((py - MAPA_Y) / TILE);
+  if (r < 0 || r >= MAPA_ROWS || c < 0 || c >= MAPA_COLS) return true;
+  return MAPA[r][c] === "#";
+}
+
+function livre(px, py) {
+  const h = 8;
+  return !paredeEm(px - h, py - h) && !paredeEm(px + h, py - h) &&
+         !paredeEm(px - h, py + h) && !paredeEm(px + h, py + h);
+}
+
+function centroX(px) { return Math.floor(px / TILE) * TILE + TILE / 2; }
+function centroY(py) { return MAPA_Y + Math.floor((py - MAPA_Y) / TILE) * TILE + TILE / 2; }
+function aproximar(v, alvo, passo) {
+  if (Math.abs(alvo - v) <= passo) return alvo;
+  return v + Math.sign(alvo - v) * passo;
+}
+
+const DIRS = {
+  ArrowLeft: { dx: -1, dy: 0, nome: "esq" },
+  ArrowRight: { dx: 1, dy: 0, nome: "dir" },
+  ArrowUp: { dx: 0, dy: -1, nome: "cima" },
+  ArrowDown: { dx: 0, dy: 1, nome: "baixo" },
+};
+
+function atualizarFase2(dt) {
+  f2.invenc = Math.max(0, f2.invenc - dt);
+  f2.gritoCd = Math.max(0, f2.gritoCd - dt);
+  if (f2.grito > 0) f2.grito -= dt;
+  if (f2.msgT > 0) f2.msgT -= dt;
+
+  // grito de coragem
+  if (foiApertada("Space") && f2.gritoCd <= 0) {
+    f2.grito = CONFIG.gritoDur;
+    f2.gritoCd = CONFIG.gritoRecarga;
+    SFX.grito();
+    msgF2("GRITO DE CORAGEM!", 1.2);
+  }
+
+  // ------- movimento -------
+  let d = null;
+  for (let i = ordemSetas.length - 1; i >= 0; i--) {
+    if (teclas[ordemSetas[i]]) { d = DIRS[ordemSetas[i]]; break; }
+  }
+  f2.andando = false;
+  if (d) {
+    f2.dir = d.nome;
+    const v = CONFIG.velTuti * dt;
+    if (d.dx !== 0) {
+      const alvo = centroY(f2.y);
+      if (f2.y !== alvo) {
+        const ny = aproximar(f2.y, alvo, v);
+        if (livre(f2.x, ny)) { f2.y = ny; f2.andando = true; }
+      }
+      if (livre(f2.x + d.dx * v, f2.y)) { f2.x += d.dx * v; f2.andando = true; }
+    } else {
+      const alvo = centroX(f2.x);
+      if (f2.x !== alvo) {
+        const nx = aproximar(f2.x, alvo, v);
+        if (livre(nx, f2.y)) { f2.x = nx; f2.andando = true; }
+      }
+      if (livre(f2.x, f2.y + d.dy * v)) { f2.y += d.dy * v; f2.andando = true; }
+    }
+  }
+  if (f2.andando) f2.anim += dt * 8; else f2.anim = 0;
+
+  // ------- itens -------
+  for (const it of ITENS) {
+    if (f2.pegos[it.chave]) continue;
+    const p = POS[it.chave];
+    if (Math.abs(f2.x - cx(p.c)) < 18 && Math.abs(f2.y - cy(p.r)) < 18) {
+      f2.pegos[it.chave] = true;
+      jogo.pontos += 200;
+      SFX.item();
+      msgF2("PEGOU A " + it.nome + "!", 1.8);
+    }
+  }
+
+  // ------- Tia Nuna -------
+  if (Math.abs(f2.x - cx(POS.nuna.c)) < 30 && Math.abs(f2.y - cy(POS.nuna.r)) < 30) {
+    if (!f2.nunaFalou) {
+      f2.nunaFalou = true;
+      if (jogo.vidas < CONFIG.vidas) jogo.vidas++;
+      SFX.coleta();
+      msgF2("A CHAVE TÁ LÁ NA DIREITA!", 3.5);
+    }
+    f2.pertoNuna = true;
+  } else {
+    f2.pertoNuna = false;
+  }
+
+  // ------- monstrinhos -------
+  if (f2.grito <= 0) {
+    for (const m of f2.monstros) {
+      const v = CONFIG.velMonstro * dt * m.dir;
+      if (m.eixo === "h") {
+        m.x += v;
+        if (m.x <= m.min) { m.x = m.min; m.dir = 1; }
+        if (m.x >= m.max) { m.x = m.max; m.dir = -1; }
+      } else {
+        m.y += v;
+        if (m.y <= m.min) { m.y = m.min; m.dir = 1; }
+        if (m.y >= m.max) { m.y = m.max; m.dir = -1; }
+      }
+    }
+  }
+
+  if (f2.invenc <= 0) {
+    for (const m of f2.monstros) {
+      if (Math.abs(f2.x - m.x) < 18 && Math.abs(f2.y - m.y) < 18) {
+        f2.invenc = CONFIG.invencivel;
+        msgF2("A BAGUNÇA TE PEGOU!", 2);
+        f2.x = cx(POS.inicio.c);
+        f2.y = cy(POS.inicio.r);
+        f2.dir = "baixo";
+        if (perderVida()) return;
+        break;
+      }
+    }
+  }
+
+  // ------- porta da sala -------
+  const dp = Math.abs(f2.x - cx(POS.porta.c)) < 16 && Math.abs(f2.y - cy(POS.porta.r)) < 16;
+  if (dp) {
+    if (ITENS.every((it) => f2.pegos[it.chave])) {
+      jogo.pontos += 1000 + jogo.vidas * 300;
+      SFX.vitoria();
+      trocarEstado("VITORIA");
+      criarConfete();
+    } else if (f2.msgT <= 0) {
+      msgF2("FALTA PEGAR OS ITENS!", 2);
+      SFX.porta();
+    }
+  }
+}
+
+function desenharParede(x, y) {
+  ctx.fillStyle = "#3b4a63"; ctx.fillRect(x, y, TILE, TILE);
+  ctx.fillStyle = "#4d6280"; ctx.fillRect(x, y, TILE, 4);
+  ctx.fillStyle = "#2a3548";
+  ctx.fillRect(x, y + 11, TILE, 2);
+  ctx.fillRect(x + 11, y, 2, 11);
+  ctx.fillRect(x + 5, y + 13, 2, 11);
+  ctx.fillRect(x + 17, y + 13, 2, 11);
+}
+
+function desenharFase2() {
+  ctx.fillStyle = "#151a26"; ctx.fillRect(0, HUD_H, W, H - HUD_H);
+
+  // chão + paredes
+  for (let r = 0; r < MAPA_ROWS; r++) {
+    for (let c = 0; c < MAPA_COLS; c++) {
+      const x = c * TILE, y = MAPA_Y + r * TILE;
+      if (MAPA[r][c] === "#") { desenharParede(x, y); continue; }
+      ctx.fillStyle = (r + c) % 2 ? "#c8c2ad" : "#b8b19a";
+      ctx.fillRect(x, y, TILE, TILE);
+    }
+  }
+
+  // porta da sala
+  const px = POS.porta.c * TILE, py = MAPA_Y + POS.porta.r * TILE;
+  const completo = ITENS.every((it) => f2.pegos[it.chave]);
+  ctx.fillStyle = completo ? "#f7c948" : "#8b5a2b";
+  ctx.fillRect(px + 1, py + 1, TILE - 2, TILE - 2);
+  ctx.fillStyle = completo ? "#fff2b0" : "#6b421d";
+  ctx.fillRect(px + 4, py + 4, TILE - 8, 9);
+  ctx.fillStyle = "#12131a";
+  ctx.fillRect(px + TILE - 8, py + TILE / 2, 3, 3);
+  if (completo && Math.floor(jogo.t * 4) % 2 === 0) {
+    ctx.strokeStyle = "#fff2b0"; ctx.lineWidth = 2;
+    ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2);
+  }
+  texto("SALA", px + TILE / 2, py - 14, { tam: 10, cor: completo ? "#f7c948" : "#c8c2ad" });
+
+  // itens
+  for (const it of ITENS) {
+    if (f2.pegos[it.chave]) continue;
+    const p = POS[it.chave];
+    const flut = Math.sin(jogo.t * 3 + p.c) * 2;
+    spriteC(SPR[it.spr], cx(p.c), cy(p.r) + flut, 2);
+  }
+
+  // Tia Nuna
+  spriteC(SPR.nuna, cx(POS.nuna.c), cy(POS.nuna.r) - 6, 2);
+
+  // monstrinhos
+  for (const m of f2.monstros) {
+    const tremida = f2.grito > 0 ? Math.sin(jogo.t * 40) * 2 : 0;
+    spriteC(SPR.monstro, m.x + tremida, m.y, 2, f2.grito > 0 ? { c: "#7fc4ff", w: "#dff0ff" } : null);
+  }
+
+  // Tuti
+  const piscando = f2.invenc > 0 && Math.floor(f2.invenc * 12) % 2 === 0;
+  if (!piscando) {
+    const q = Math.floor(f2.anim) % 2;
+    let spr, esp = false;
+    if (f2.dir === "cima") spr = q ? SPR.tutiCima1 : SPR.tutiCima0;
+    else if (f2.dir === "baixo") spr = q ? SPR.tutiBaixo1 : SPR.tutiBaixo0;
+    else { spr = q ? SPR.tutiLado1 : SPR.tutiLado0; esp = f2.dir === "esq"; }
+    spriteC(spr, f2.x, f2.y - 6, 2, null, esp);
+  }
+
+  // balãozinho de fala
+  if (f2.msgT > 0) {
+    ctx.font = 'bold 12px "Courier New", monospace';
+    const larguraTxt = ctx.measureText(f2.msg).width + 20;
+    const bx = Math.max(6, Math.min(W - larguraTxt - 6, f2.x - larguraTxt / 2));
+    const by = Math.max(HUD_H + 4, f2.y - 44);
+    painel(bx, by, larguraTxt, 22, "#f7c948");
+    texto(f2.msg, bx + larguraTxt / 2, by + 5, { tam: 12, cor: "#ffffff" });
+  }
+
+  desenharHudFase2();
+}
+
+function desenharHudFase2() {
+  painel(0, 0, W, HUD_H);
+  desenharCoracoes(10, 16);
+
+  // checklist de itens
+  for (let i = 0; i < ITENS.length; i++) {
+    const it = ITENS[i];
+    const x = 82 + i * 30, y = 12;
+    const pego = f2.pegos[it.chave];
+    ctx.fillStyle = pego ? "rgba(63,163,77,.35)" : "rgba(255,255,255,.08)";
+    ctx.fillRect(x - 2, y - 2, 28, 28);
+    spriteC(SPR[it.spr], x + 12, y + 12, 2, pego ? null : CINZA);
+  }
+
+  // barra do grito
+  texto("GRITO", 214, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  const pronto = f2.gritoCd <= 0;
+  barra(214, 19, 100, 16, pronto ? 1 : 1 - f2.gritoCd / CONFIG.gritoRecarga, pronto ? "#f7c948" : "#5d6272");
+  if (pronto && Math.floor(jogo.t * 3) % 2 === 0) texto("!", 320, 18, { tam: 16, align: "left", cor: "#f7c948" });
+
+  texto("PONTOS", 470, 4, { tam: 10, align: "right", cor: "#f3c39a" });
+  texto(String(Math.floor(jogo.pontos)).padStart(6, "0"), 470, 17, { tam: 18, align: "right", cor: "#f7c948" });
+}
+
+/* ==========================================================================
+   TELAS
+   ========================================================================== */
+function fundoNoite() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#101936");
+  g.addColorStop(0.55, "#26355f");
+  g.addColorStop(1, "#7a4f6a");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // estrelinhas
+  for (let i = 0; i < 40; i++) {
+    const x = (i * 97) % W, y = (i * 53) % 150;
+    ctx.fillStyle = i % 3 === 0 ? "#f7c948" : "#ffffff";
+    ctx.fillRect(x, y, 2, 2);
+  }
+}
+
+function desenharTitulo() {
+  fundoNoite();
+  // chão: grama, calçada e rua. CHAO é a linha onde os pés e as rodas encostam.
+  const CHAO = 322;
+  ctx.fillStyle = "#2c5f37"; ctx.fillRect(0, 286, W, H - 286);
+  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 292, W, 8);
+  ctx.fillStyle = "#3a3f4c"; ctx.fillRect(0, 300, W, 44);
+  ctx.fillStyle = "#f0e6c0";
+  for (let x = 10; x < W; x += 60) ctx.fillRect(x, CHAO - 1, 26, 3);
+
+  texto("TIA MOTORA", W / 2, 26, { tam: 38, cor: "#f7c948" });
+  texto("EM MISSÃO!", W / 2, 66, { tam: 24, cor: "#f2a3c7" });
+  texto("O JOGO DO " + CONFIG.nomeMenino, W / 2, 96, { tam: 13, cor: "#ffffff" });
+
+  // ceninha, todo mundo com o pé no chão
+  spriteC(SPR.carroLado, 110, CHAO - 18, 3);
+  spriteC(SPR.nuna, 246, CHAO - 31, 3);
+  spriteC(SPR.tutiBaixo0, 300, CHAO - 25, 3);
+
+  painel(300, 120, 172, 86);
+  texto("COMO JOGAR", 386, 126, { tam: 12, cor: "#f7c948" });
+  texto("SETAS = ANDAR", 386, 146, { tam: 11 });
+  texto("ESPAÇO = AÇÃO", 386, 162, { tam: 11 });
+  texto("P = PAUSA / M = SOM", 386, 178, { tam: 10, cor: "#c8c2ad" });
+
+  if (Math.floor(jogo.t * 2) % 2 === 0)
+    texto("APERTE ESPAÇO PRA COMEÇAR", W / 2, 338, { tam: 15, cor: "#f7c948" });
+}
+
+function desenharIntervalo() {
+  fundoNoite();
+  // a escola fica apoiada na calçada e todo mundo em pé sobre ela
+  const CHAO = 326;
+  desenharEscola(90, 138, 300, 152);                       // corpo termina em 290
+  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 290, W, H - 290);
+  ctx.fillStyle = "#9a9a88"; ctx.fillRect(0, 290, W, 4);
+  ctx.fillStyle = "#7d7d6c";
+  for (let x = 0; x < W; x += 44) ctx.fillRect(x, 294, 2, H - 294);
+
+  texto("PARTE 1 CUMPRIDA!", W / 2, 12, { tam: 24, cor: "#f7c948" });
+  textoCoracao("CHEGAMOS NA ESCOLA!", W / 2, 42, { tam: 14, cor: "#f2a3c7" });
+
+  painel(96, 64, 288, 28);
+  texto("PONTOS: " + Math.floor(jogo.pontos), W / 2, 70, { tam: 15, cor: "#ffffff" });
+
+  const total = f1.amigos ? f1.amigos.length : 0;
+  const pegos = f1.amigos ? amigosPegos() : 0;
+  painel(120, 96, 240, 26, "#f2a3c7");
+  texto("AMIGOS QUE VOCÊ PEGOU: " + pegos + "/" + total, W / 2, 102, { tam: 12, cor: "#f2a3c7" });
+
+  spriteC(SPR.nuna, 128, CHAO - 21, 2);
+  spriteC(SPR.tutiBaixo0, 166, CHAO - 17, 2);
+  if (f1.amigos) {
+    let n = 0;
+    for (const a of f1.amigos) {
+      if (!a.pego) continue;
+      spriteC(SPR.tutiBaixo0, 204 + n * 32, CHAO - 17, 2, AMIGOS[a.idx].cor);
+      n++;
+    }
+  }
+
+  if (Math.floor(jogo.t * 2) % 2 === 0)
+    texto("AGORA OS DESAFIOS LÁ DENTRO! ESPAÇO", W / 2, 336, { tam: 13, cor: "#f7c948" });
+}
+
+const confete = [];
+function criarConfete() {
+  confete.length = 0;
+  const cores = ["#f7c948", "#f2a3c7", "#3fa34d", "#7fc4ff", "#d9463c", "#ffffff"];
+  for (let i = 0; i < 90; i++) {
+    confete.push({
+      x: Math.random() * W, y: -Math.random() * H,
+      vy: 40 + Math.random() * 90, vx: (Math.random() - 0.5) * 30,
+      cor: cores[Math.floor(Math.random() * cores.length)],
+      t: Math.random() * 6,
+    });
+  }
+}
+
+function atualizarConfete(dt) {
+  for (const c of confete) {
+    c.y += c.vy * dt;
+    c.x += Math.sin(c.t + jogo.t * 3) * 18 * dt + c.vx * dt;
+    if (c.y > H + 8) { c.y = -8; c.x = Math.random() * W; }
+  }
+}
+
+function desenharVitoria() {
+  fundoNoite();
+  const CHAO = 328;
+  desenharEscola(150, 182, 180, 118);                      // corpo termina em 300
+  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 300, W, H - 300);
+  ctx.fillStyle = "#9a9a88"; ctx.fillRect(0, 300, W, 4);
+  spriteC(SPR.nuna, 72, CHAO - 21, 2);
+  spriteC(SPR.tutiBaixo0, 108, CHAO - 17, 2);
+  spriteC(SPR.carroLado, 406, CHAO - 12, 2);
+  for (const c of confete) { ctx.fillStyle = c.cor; ctx.fillRect(c.x | 0, c.y | 0, 5, 5); }
+
+  texto("MISSÃO", W / 2, 10, { tam: 36, cor: "#f7c948" });
+  texto("CUMPRIDA!", W / 2, 46, { tam: 36, cor: "#f7c948" });
+  textoCoracao("APRENDIZAGEM, AMOR E FUTURO!", W / 2, 88, { tam: 13, cor: "#f2a3c7" });
+
+  painel(96, 110, 288, 48);
+  texto("PONTUAÇÃO FINAL", W / 2, 115, { tam: 11, cor: "#c8c2ad" });
+  texto(String(Math.floor(jogo.pontos)).padStart(6, "0"), W / 2, 130, { tam: 24, cor: "#f7c948" });
+
+  if (Math.floor(jogo.t * 2) % 2 === 0)
+    texto("ESPAÇO = JOGAR DE NOVO", W / 2, 162, { tam: 14, cor: "#ffffff" });
+
+  painel(56, 332, 368, 26, "#f2a3c7");
+  textoCoracao("CONQUISTA: " + CONFIG.nomeTia + " DO ANO", W / 2 - 8, 337, { tam: 13, cor: "#f2a3c7" });
+}
+
+function desenharGameOver() {
+  fundoNoite();
+  texto("OPA!", W / 2, 70, { tam: 40, cor: "#d9463c" });
+  texto("TENTA DE NOVO, " + CONFIG.nomeMenino + "!", W / 2, 122, { tam: 18, cor: "#f7c948" });
+  texto(jogo.faseDoGameOver === 1 ? "FASE 1 — A CORRIDA PRA ESCOLA" : "FASE 2 — DESAFIOS NA ESCOLA",
+    W / 2, 152, { tam: 12, cor: "#c8c2ad" });
+
+  painel(96, 186, 288, 26, "#f2a3c7");
+  texto("A TIA TÁ AQUI, VAMO DE NOVO!", W / 2, 191, { tam: 12, cor: "#f2a3c7" });
+
+  // chão, pra tia e o Tuti ficarem em pé em vez de flutuando
+  const CHAO = 306;
+  ctx.fillStyle = "#2c5f37"; ctx.fillRect(0, 288, W, H - 288);
+  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 294, W, H - 294);
+  spriteC(SPR.nuna, 200, CHAO - 31, 3);
+  spriteC(SPR.tutiBaixo0, 262, CHAO - 25, 3);
+
+  if (Math.floor(jogo.t * 2) % 2 === 0)
+    texto("APERTE ESPAÇO", W / 2, 330, { tam: 16, cor: "#f7c948" });
+}
+
+function desenharPausa() {
+  ctx.fillStyle = "rgba(9,11,20,0.75)";
+  ctx.fillRect(0, 0, W, H);
+  texto("PAUSADO", W / 2, 140, { tam: 34, cor: "#f7c948" });
+  texto("APERTE P PRA VOLTAR", W / 2, 190, { tam: 14 });
+}
+
+/* ==========================================================================
+   LOOP PRINCIPAL
+   ========================================================================== */
+let ultimo = 0;
+
+function quadro(agora) {
+  requestAnimationFrame(quadro);
+  if (!ultimo) ultimo = agora;
+  let dt = (agora - ultimo) / 1000;
+  ultimo = agora;
+  if (dt > 0.05) dt = 0.05;   // evita "teleporte" se a aba travar
+
+  // pausa / som
+  if (foiApertada("KeyP") && ["MANHA", "FASE1", "FASE2"].indexOf(jogo.estado) >= 0) jogo.pausado = !jogo.pausado;
+  if (foiApertada("KeyM")) { som.ligado = !som.ligado; if (som.ligado) SFX.coleta(); }
+
+  if (!jogo.pausado) {
+    jogo.t += dt;
+    jogo.tremor = Math.max(0, jogo.tremor - dt * 1.6);
+
+    switch (jogo.estado) {
+      case "TITULO":
+        if (foiApertada("Space")) { jogo.pontos = 0; SFX.fase(); iniciarManha(); }
+        break;
+      case "MANHA":
+        atualizarManha(dt);
+        break;
+      case "FASE1":
+        atualizarFase1(dt);
+        break;
+      case "INTERVALO":
+        if (foiApertada("Space")) iniciarFase2();
+        break;
+      case "FASE2":
+        atualizarFase2(dt);
+        break;
+      case "VITORIA":
+        atualizarConfete(dt);
+        if (jogo.t > 1 && foiApertada("Space")) { jogo.pontos = 0; trocarEstado("TITULO"); }
+        break;
+      case "GAMEOVER":
+        if (jogo.t > 0.6 && foiApertada("Space")) {
+          jogo.pontos = jogo.pontosFase;
+          if (jogo.faseDoGameOver === 1) iniciarFase1(); else iniciarFase2();
+        }
+        break;
+    }
+  }
+
+  // ---- desenho ----
+  ctx.save();
+  if (jogo.tremor > 0) {
+    ctx.translate((Math.random() - 0.5) * jogo.tremor * 14, (Math.random() - 0.5) * jogo.tremor * 14);
+  }
+  ctx.fillStyle = "#0b0d16"; ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  switch (jogo.estado) {
+    case "TITULO": desenharTitulo(); break;
+    case "MANHA": desenharManha(); break;
+    case "FASE1": desenharFase1(); break;
+    case "INTERVALO": desenharIntervalo(); break;
+    case "FASE2": desenharFase2(); break;
+    case "VITORIA": desenharVitoria(); break;
+    case "GAMEOVER": desenharGameOver(); break;
+  }
+  ctx.restore();
+
+  if (jogo.pausado) desenharPausa();
+  if (!som.ligado) texto("SOM OFF", 470, H - 16, { tam: 10, align: "right", cor: "#5d6272" });
+
+  apertadas.clear();
+}
+
+requestAnimationFrame(quadro);
+</script>
