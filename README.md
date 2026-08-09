@@ -45,10 +45,13 @@ tarde, com a posição na corrida aparecendo no painel.
 na Tia Nuna. O Thomas é pequeno e corre devagar, mas a tia corre mais que ele:
 a chance é aproveitar o momento em que ela para pra tomar fôlego.
 
-**7. A noite na sala** — o fecho do dia, sem como perder. Ele zapeia a TV com
-← → até achar o desenho do foguete, assiste apertando ação nas partes
-engraçadas enquanto a barrinha de sono enche, e aí anda até o sofá pra deitar.
-A Tia Nuna chega com o cobertor, apaga a luz e acaba o jogo.
+**7. A noite na sala** — o fecho do dia, sem como perder. Ele escolhe um dos
+três desenhos da TV (nenhum é o errado) e o desenho escolhido vira um joguinho:
+a telinha cresce até tomar a tela toda e ele brinca lá dentro por um episódio —
+o foguete desviando de meteoros, o dinossauro pulando pedras ou o mergulhador
+fugindo das águas-vivas. A barrinha de sono é o relógio do episódio: quando
+enche, o desenho acaba, ele anda até o sofá e deita. A Tia Nuna chega com o
+cobertor, apaga a luz e acaba o jogo.
 
 ## Mexer no jogo
 
