@@ -13,6 +13,10 @@ Joguinho de pixel art feito de presente para o Tuti, 7 anos.
 | P | Pausa |
 | M | Liga e desliga o som |
 
+**No celular e no tablet** aparecem sozinhos um direcional e um botão AÇÃO na
+tela, e as dicas do jogo trocam "ESPAÇO" por "AÇÃO". Em pé os botões ficam
+embaixo do jogo; deitado eles vão pras laterais, sem cobrir nada da tela.
+
 ## As fases
 
 **1. A manhã em casa** — quatro tarefinhas antes de sair: acordar no despertador,
@@ -40,6 +44,11 @@ tarde, com a posição na corrida aparecendo no painel.
 **6. Pega-pega no quintal** — o Tuti é o pegador e precisa encostar no Thomas e
 na Tia Nuna. O Thomas é pequeno e corre devagar, mas a tia corre mais que ele:
 a chance é aproveitar o momento em que ela para pra tomar fôlego.
+
+**7. A noite na sala** — o fecho do dia, sem como perder. Ele zapeia a TV com
+← → até achar o desenho do foguete, assiste apertando ação nas partes
+engraçadas enquanto a barrinha de sono enche, e aí anda até o sofá pra deitar.
+A Tia Nuna chega com o cobertor, apaga a luz e acaba o jogo.
 
 ## Mexer no jogo
 
