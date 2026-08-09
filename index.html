@@ -171,10 +171,12 @@ const CONFIG = {
   descansoDur: 1.6,
 
   // ---- FASE 7: a noite na sala (fase final, também não tem como perder) ----
-  sonoVel: 7.5,             // quanto o sono sobe por segundo assistindo o desenho
-  intervaloPiada: 2.4,      // de quanto em quanto tempo o desenho fica engraçado
-  duracaoPiada: 1.4,        // e por quanto tempo dá pra rir apertando o botão
-  velZap: 0.2,              // segurando ← →, tempo entre um canal e outro
+  duracaoEpisodio: 26,      // quanto dura o desenho escolhido, em segundos
+  velFoguete: 215,          // desenho 1: o foguete indo de um lado pro outro
+  puloDino: 360,            // desenho 2: força do pulo
+  gravidadeDino: 980,
+  velChaoDino: 205,         // e a rapidez com que o cenário passa
+  velMergulho: 155,         // desenho 3: o Tuti nadando
 
   // ---- FASE 2: desafios na escola ----
   velTuti: 118,
@@ -706,7 +708,8 @@ SPR.controle = [        // controle remoto da TV
   "kkkkkk",
 ];
 
-SPR.foguete = [         // o desenho preferido do Tuti passando na TV
+/* ---- os heróis e as coisas dos três desenhos da TV ---- */
+SPR.foguete = [
   "....ww....",
   "...wwww...",
   "..wwrrww..",
@@ -718,6 +721,82 @@ SPR.foguete = [         // o desenho preferido do Tuti passando na TV
   ".r.oyyo.r.",
   "...oyyo...",
   "....oo....",
+];
+
+SPR.meteoro = [
+  "..dddd..",
+  ".dbbbbd.",
+  "dbbcbbbd",
+  "dbcbbbbd",
+  "dbbbbcbd",
+  "dbbbbbbd",
+  ".dbbbbd.",
+  "..dddd..",
+];
+
+SPR.pedra = [        // pedra do chão, mais baixinha que o meteoro
+  "..dddd..",
+  ".dbbbbd.",
+  "dbbcbbbd",
+  "dbbbbbbd",
+  "ddbbbbdd",
+  ".dddddd.",
+];
+
+SPR.dino = [         // o Tuti vira dinossauro no desenho dos dinossauros
+  "..........GGGG..",
+  ".........GggggG.",
+  ".........Ggkggg.",
+  ".........Gggggg.",
+  "GG.......GggggG.",
+  "GgG.....GggggG..",
+  "GggGGGGGggggG...",
+  "GgggggggggggG...",
+  ".GggggggggggG...",
+  "..GgggggggggG...",
+  "...GggGGGggG....",
+  "...Ggg...Ggg....",
+  "...GG.....GG....",
+  "..GGG.....GGG...",
+];
+
+SPR.peixe = [
+  "....yy....",
+  "...yyyy.yy",
+  ".yyyyyyyyy",
+  "yykyyyyyyy",
+  ".yyyyyyyyy",
+  "...yyyy.yy",
+  "....yy....",
+];
+
+SPR.aguaViva = [
+  "..pppp..",
+  ".pppppp.",
+  "pppppppp",
+  "pkppppkp",
+  "pppppppp",
+  ".p.pp.p.",
+  "p..pp..p",
+  ".p.pp.p.",
+  "p..p..p.",
+];
+
+SPR.mergulhador = [  // o Tuti de máscara, no desenho do fundo do mar
+  "...HHHHH....",
+  "..HHHHHHH...",
+  "..HHHHHsss..",
+  "..cllllllc..",
+  "..cllkllkc..",
+  "..Hssssssk..",
+  "...ssssss...",
+  "....ssss....",
+  "..aggggggs..",
+  "..aggggggs..",
+  "..aggggggs..",
+  "...gggggg...",
+  "...AAAAA....",
+  "..SSSS.SSS..",
 ];
 
 // carinha pequena, usada no contador de amigos do HUD
@@ -2830,68 +2909,371 @@ const TV = { x: 60, y: 150, w: 128, h: 100, sx: 68, sy: 158, sw: 112, sh: 76 };
 // se o sofá subisse mais, a sala virava um mundo de gigantes
 const SOFA = { x: 284, y: 256, w: 176 };
 
-// cada canal pinta a própria telinha. Só um é o desenho certo.
-const CANAIS = [
+/* --------------------------------------------------------------------------
+   OS TRÊS DESENHOS DA TV
+   Cada desenho tem uma capinha (a mesma arte serve pro menu e pra telinha da
+   TV) e um joguinho próprio. O joguinho é desenhado em coordenadas locais de
+   MG_W x MG_H e depois escalado dentro de um retângulo — é isso que permite
+   ele "crescer" de dentro da TV até a tela inteira quando o episódio começa.
+   -------------------------------------------------------------------------- */
+const MG_W = 448, MG_H = 292;
+
+function mgBase() {
+  return { t: 0, coletados: 0, invenc: 0, brilhos: [], opaT: 0, opaX: 0, opaY: 0 };
+}
+
+// resto SEMPRE positivo: o % do JavaScript devolve negativo pra número negativo,
+// e aí o cenário que rola pra esquerda ia embora e nunca mais voltava
+function mgVolta(v, n) { return ((v % n) + n) % n; }
+
+function mgFundo(cima, baixo) {
+  const g = ctx.createLinearGradient(0, 0, 0, MG_H);
+  g.addColorStop(0, cima); g.addColorStop(1, baixo);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, MG_W, MG_H);
+}
+
+function mgPegou(m, x, y) {
+  m.coletados++;
+  jogo.pontos += 60;
+  m.brilhos.push({ x: x, y: y, t: 0.45 });
+  SFX.item();
+}
+
+// esbarrar não tira vida (a fase é de despedida): custa uns pontinhos e um susto
+// o m.t < 1.2 dá um segundinho de graça no começo: ninguém toma susto antes de
+// entender o que apareceu na tela (e sem piscar, que só confundiria)
+function mgOpa(m, x, y) {
+  if (m.invenc > 0 || m.t < 1.2) return false;
+  m.invenc = 1.1;
+  m.opaX = x; m.opaY = y; m.opaT = 0.9;
+  jogo.pontos = Math.max(0, jogo.pontos - 30);
+  SFX.dano();
+  tremer(0.3);
+  return true;
+}
+
+function mgAtualizarEfeitos(m, dt) {
+  m.t += dt;
+  m.invenc = Math.max(0, m.invenc - dt);
+  if (m.opaT > 0) m.opaT -= dt;
+  for (const b of m.brilhos) b.t -= dt;
+  m.brilhos = m.brilhos.filter((b) => b.t > 0);
+}
+
+function mgDesenharEfeitos(m) {
+  for (const b of m.brilhos) {
+    const r = 8 + (0.45 - b.t) * 40;
+    ctx.strokeStyle = "#f7c948"; ctx.lineWidth = 3;
+    ctx.strokeRect(b.x - r, b.y - r, r * 2, r * 2);
+  }
+  if (m.opaT > 0) {
+    // com painel atrás: em cima do céu alaranjado do dinossauro, o vermelho
+    // sozinho sumia
+    ctx.font = 'bold 20px "Courier New", monospace';
+    const lw = ctx.measureText("OPA!").width + 20;
+    painel(m.opaX - lw / 2, m.opaY - 52, lw, 28, "#d9463c");
+    texto("OPA!", m.opaX, m.opaY - 47, { tam: 20, cor: "#d9463c" });
+  }
+}
+
+const DESENHOS = [
+  /* ---------------- 1) O FOGUETE ---------------- */
   {
-    nome: "JORNAL", desenho: false,
-    pintar: function (x, y, w, h) {
-      ctx.fillStyle = "#1b2740"; ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(x + w - 46, y + 10, 38, 34);
-      ctx.fillStyle = "#f3c39a"; ctx.fillRect(x + 20, y + 18, 22, 20);   // cabeça
-      ctx.fillStyle = "#12131a"; ctx.fillRect(x + 20, y + 14, 22, 7);
-      ctx.fillStyle = "#2b2f3d"; ctx.fillRect(x + 12, y + 38, 38, 22);   // terno
-      ctx.fillStyle = "#c8c2ad"; ctx.fillRect(x + 28, y + 38, 6, 22);
-      ctx.fillStyle = "#d9463c"; ctx.fillRect(x, y + h - 20, w, 16);
-      texto("NOTÍCIAS", x + w / 2, y + h - 17, { tam: 9, cor: "#ffffff" });
-    },
-  },
-  {
-    nome: "CHUVISCO", desenho: false,
-    pintar: function (x, y, w, h) {
-      ctx.fillStyle = "#2b2f3d"; ctx.fillRect(x, y, w, h);
-      for (let i = 0; i < 150; i++) {
-        ctx.fillStyle = Math.random() < 0.5 ? "#a9afc0" : "#5d6272";
-        ctx.fillRect((x + Math.random() * w) | 0, (y + Math.random() * h) | 0, 3, 3);
-      }
-    },
-  },
-  {
-    nome: "FUTEBOL", desenho: false,
-    pintar: function (x, y, w, h) {
-      ctx.fillStyle = "#3fa34d"; ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = "#4fb35d"; for (let i = 0; i < w; i += 22) ctx.fillRect(x + i, y, 11, h);
-      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
-      ctx.strokeRect(x + 6, y + 6, w - 12, h - 12);
-      ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, 14, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = "#d9463c"; ctx.fillRect(x + 26, y + 28, 8, 16);
-      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(x + w - 36, y + 34, 8, 16);
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(x + w / 2 - 4, y + h - 26, 8, 8);
-    },
-  },
-  {
-    nome: "NOVELA", desenho: false,
-    pintar: function (x, y, w, h) {
-      ctx.fillStyle = "#7a4f6a"; ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = "#b0793f"; ctx.fillRect(x + 20, y + 22, 22, 22);
-      ctx.fillStyle = "#f3c39a"; ctx.fillRect(x + 23, y + 26, 16, 18);
-      ctx.fillStyle = "#7a4a24"; ctx.fillRect(x + w - 42, y + 22, 22, 22);
-      ctx.fillStyle = "#f3c39a"; ctx.fillRect(x + w - 39, y + 26, 16, 18);
-      sprite(SPR.coracao, x + w / 2 - 7, y + 24, 2);
-      texto("AI, AMOR!", x + w / 2, y + h - 22, { tam: 9, cor: "#f2a3c7" });
-    },
-  },
-  {
-    nome: "O FOGUETE DO " + CONFIG.nomeMenino, desenho: true,
-    pintar: function (x, y, w, h) {
+    nome: "O FOGUETE",
+    dica: "← → DESVIA DOS METEOROS E PEGA AS ESTRELAS",
+    capa: function (x, y, w, h) {
       ctx.fillStyle = "#101936"; ctx.fillRect(x, y, w, h);
-      for (let i = 0; i < 22; i++) {
-        ctx.fillStyle = i % 3 === 0 ? "#f7c948" : "#ffffff";
+      for (let i = 0; i < 16; i++) {
+        ctx.fillStyle = i % 3 ? "#ffffff" : "#f7c948";
         ctx.fillRect(x + ((i * 43 + i * i * 7) % w) | 0, y + ((i * 29 + i * i * 3) % h) | 0, 2, 2);
       }
-      ctx.fillStyle = "#c8c2ad";                                  // lua
-      ctx.fillRect(x + w - 26, y + 8, 14, 14);
-      const sobe = Math.sin(jogo.t * 3) * 4;
-      spriteC(SPR.foguete, x + w / 2, y + h / 2 + sobe, 4);
+      ctx.fillStyle = "#e8e2c8";
+      ctx.beginPath(); ctx.arc(x + w - 14, y + 12, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#101936";
+      ctx.beginPath(); ctx.arc(x + w - 17, y + 10, 6, 0, Math.PI * 2); ctx.fill();
+      spriteC(SPR.foguete, x + w / 2, y + h / 2 + Math.sin(jogo.t * 3) * 3, Math.max(2, Math.round(h / 24)));
+    },
+    iniciar: function (m) {
+      m.x = MG_W / 2;
+      m.coisas = [];
+      m.tMeteoro = 0.9;
+      m.tEstrela = 0.5;
+      m.estrelinhas = [];
+      for (let i = 0; i < 44; i++) {
+        m.estrelinhas.push({ x: Math.random() * MG_W, y: Math.random() * MG_H, v: 30 + Math.random() * 80 });
+      }
+    },
+    atualizar: function (m, dt) {
+      if (teclas.ArrowLeft) m.x -= CONFIG.velFoguete * dt;
+      if (teclas.ArrowRight) m.x += CONFIG.velFoguete * dt;
+      m.x = Math.max(26, Math.min(MG_W - 26, m.x));
+      const y = MG_H - 52;
+
+      for (const e of m.estrelinhas) {
+        e.y += e.v * dt;
+        if (e.y > MG_H) { e.y = 0; e.x = Math.random() * MG_W; }
+      }
+
+      m.tMeteoro -= dt;
+      m.tEstrela -= dt;
+      if (m.tMeteoro <= 0) {
+        m.coisas.push({ tipo: "meteoro", x: 34 + Math.random() * (MG_W - 68), y: -24, v: 145 + Math.random() * 70 });
+        m.tMeteoro = 0.72 + Math.random() * 0.45;
+      }
+      if (m.tEstrela <= 0) {
+        m.coisas.push({ tipo: "estrela", x: 34 + Math.random() * (MG_W - 68), y: -24, v: 120 });
+        m.tEstrela = 0.85 + Math.random() * 0.7;
+      }
+
+      for (const c of m.coisas) {
+        c.y += c.v * dt;
+        if (c.pego) continue;
+        const d = Math.hypot(c.x - m.x, c.y - y);
+        if (c.tipo === "estrela") {
+          if (d < 32) { c.pego = true; mgPegou(m, c.x, c.y); }
+        } else if (d < 28 && mgOpa(m, c.x, c.y)) {
+          c.pego = true;
+        }
+      }
+      m.coisas = m.coisas.filter((c) => !c.pego && c.y < MG_H + 40);
+    },
+    desenhar: function (m) {
+      mgFundo("#0b1030", "#2a2350");
+      ctx.fillStyle = "#ffffff";
+      for (const e of m.estrelinhas) ctx.fillRect(e.x | 0, e.y | 0, 2, 2);
+      ctx.fillStyle = "#e8e2c8";                       // lua minguante ao fundo
+      ctx.beginPath(); ctx.arc(MG_W - 54, 44, 22, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#0b1030";
+      ctx.beginPath(); ctx.arc(MG_W - 64, 40, 20, 0, Math.PI * 2); ctx.fill();
+
+      for (const c of m.coisas) {
+        if (c.tipo === "estrela") spriteC(SPR.estrela, c.x, c.y, 3);
+        else spriteC(SPR.meteoro, c.x, c.y, 4);
+      }
+
+      const y = MG_H - 52;
+      for (let i = 0; i < 3; i++) {
+        ctx.fillStyle = i % 2 ? "#f7c948" : "#e8853a";
+        ctx.fillRect(m.x - 8 + Math.random() * 16, y + 24 + i * 6, 5, 7);
+      }
+      const pisca = m.invenc > 0 && Math.floor(m.invenc * 12) % 2 === 0;
+      if (!pisca) spriteC(SPR.foguete, m.x, y, 4);
+      mgDesenharEfeitos(m);
+    },
+  },
+
+  /* ---------------- 2) OS DINOSSAUROS ---------------- */
+  {
+    nome: "OS DINOSSAUROS",
+    dica: "↑ OU %A PRA PULAR AS PEDRAS",
+    capa: function (x, y, w, h) {
+      ctx.fillStyle = "#e8853a"; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#d9463c"; ctx.fillRect(x, y, w, h * 0.42);
+      ctx.fillStyle = "#8a4a3a";                                   // vulcão
+      ctx.beginPath();
+      ctx.moveTo(x + w - 52, y + h - 12);
+      ctx.lineTo(x + w - 26, y + h * 0.24);
+      ctx.lineTo(x + w, y + h - 12);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#3fa34d"; ctx.fillRect(x, y + h - 12, w, 12);
+      ctx.fillStyle = "#276b32"; ctx.fillRect(x, y + h - 12, w, 3);
+      spriteC(SPR.dino, x + w / 2 - 6, y + h - 24, Math.max(1, Math.round(h / 26)));
+    },
+    iniciar: function (m) {
+      m.y = 0;
+      m.vy = 0;
+      m.noChao = true;
+      m.obst = [];
+      m.tObst = 1.2;
+      m.rolagem = 0;
+      m.tropeco = 0;
+      m.montanhas = [];
+      for (let i = 0; i < 5; i++) {
+        m.montanhas.push({ x: i * 130, alt: 46 + Math.random() * 54, vulcao: i === 2 });
+      }
+    },
+    atualizar: function (m, dt) {
+      const CHAO = MG_H - 46;
+      m.rolagem += CONFIG.velChaoDino * dt;
+
+      // ↑ e o botão de ação fazem a mesma coisa: no celular vale o direcional
+      // ou o botão grande, sem a criança ter que descobrir qual dos dois é
+      if ((foiApertada("ArrowUp") || foiApertada("Space")) && m.noChao) {
+        m.vy = -CONFIG.puloDino;
+        m.noChao = false;
+        SFX.turbo();
+      }
+      m.vy += CONFIG.gravidadeDino * dt;
+      m.y += m.vy * dt;
+      if (m.y > 0) { m.y = 0; m.vy = 0; m.noChao = true; }
+      if (m.tropeco > 0) m.tropeco -= dt;
+
+      m.tObst -= dt;
+      if (m.tObst <= 0) {
+        const fruta = Math.random() < 0.45;
+        m.obst.push({
+          tipo: fruta ? "fruta" : "pedra",
+          x: MG_W + 30,
+          y: fruta ? CHAO - 74 : CHAO - 14,
+        });
+        m.tObst = 0.9 + Math.random() * 0.7;
+      }
+
+      const dinoX = 96, dinoY = CHAO + m.y - 24;
+      for (const o of m.obst) {
+        o.x -= CONFIG.velChaoDino * dt;
+        if (o.pego) continue;
+        if (Math.abs(o.x - dinoX) < 28 && Math.abs(o.y - dinoY) < 30) {
+          if (o.tipo === "fruta") { o.pego = true; mgPegou(m, o.x, o.y); }
+          else if (mgOpa(m, o.x, o.y)) { o.pego = true; m.tropeco = 0.5; }
+        }
+      }
+      m.obst = m.obst.filter((o) => !o.pego && o.x > -40);
+    },
+    desenhar: function (m) {
+      const CHAO = MG_H - 46;
+      mgFundo("#d9463c", "#f0a05a");
+      // montanhas do fundo, andando mais devagar que o chão
+      for (const mo of m.montanhas) {
+        const x = mgVolta(mo.x - m.rolagem * 0.25, MG_W + 200) - 100;
+        ctx.fillStyle = "#8a4a3a";
+        ctx.beginPath();
+        ctx.moveTo(x - 60, CHAO);
+        ctx.lineTo(x, CHAO - mo.alt);
+        ctx.lineTo(x + 60, CHAO);
+        ctx.closePath(); ctx.fill();
+        if (mo.vulcao) {                       // uma delas solta fumaça
+          ctx.fillStyle = "#f7c948";
+          ctx.fillRect(x - 7, CHAO - mo.alt, 14, 10);
+          ctx.fillStyle = "rgba(200,194,173,0.5)";
+          for (let i = 0; i < 3; i++) {
+            const s = (m.t * 18 + i * 16) % 48;
+            ctx.fillRect(x - 6 + Math.sin(s / 8) * 6, CHAO - mo.alt - 8 - s, 9, 9);
+          }
+        }
+      }
+      ctx.fillStyle = "#8b5a2b"; ctx.fillRect(0, CHAO, MG_W, MG_H - CHAO);
+      ctx.fillStyle = "#3fa34d"; ctx.fillRect(0, CHAO, MG_W, 8);
+      ctx.fillStyle = "#276b32";
+      for (let i = 0; i < 12; i++) {
+        const x = mgVolta(i * 60 - m.rolagem, MG_W + 60) - 30;
+        ctx.fillRect(x, CHAO + 2, 16, 4);
+      }
+
+      for (const o of m.obst) {
+        if (o.tipo === "fruta") spriteC(SPR.banana, o.x, o.y, 4);
+        else spriteC(SPR.pedra, o.x, o.y, 4);
+      }
+
+      const dinoY = CHAO + m.y - 24;
+      const pisca = m.invenc > 0 && Math.floor(m.invenc * 12) % 2 === 0;
+      if (!pisca) {
+        const tomba = m.tropeco > 0 ? Math.sin(m.t * 40) * 4 : 0;
+        spriteC(SPR.dino, 96 + tomba, dinoY, 4);
+      }
+      mgDesenharEfeitos(m);
+    },
+  },
+
+  /* ---------------- 3) O FUNDO DO MAR ---------------- */
+  {
+    nome: "O FUNDO DO MAR",
+    dica: "SETAS PRA NADAR, FUJA DAS ÁGUAS-VIVAS",
+    capa: function (x, y, w, h) {
+      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#7fc4ff"; ctx.fillRect(x, y, w, h * 0.35);
+      ctx.fillStyle = "#c2a06a"; ctx.fillRect(x, y + h - 10, w, 10);
+      ctx.fillStyle = "#3fa34d";
+      ctx.fillRect(x + 8, y + h - 24, 5, 16);
+      ctx.fillRect(x + w - 16, y + h - 28, 5, 20);
+      spriteC(SPR.peixe, x + w / 2 + 16, y + h / 2, Math.max(1, Math.round(h / 30)));
+      spriteC(SPR.mergulhador, x + w / 2 - 16, y + h / 2, Math.max(1, Math.round(h / 24)));
+    },
+    iniciar: function (m) {
+      m.x = MG_W / 2;
+      m.y = MG_H / 2;
+      m.dir = 1;
+      m.peixes = [];
+      m.tPeixe = 0.4;
+      // as águas-vivas começam longe do meio, senão ele já nasce esbarrando numa
+      m.aguas = [];
+      const cantos = [[90, 66], [256, 216], [382, 104]];
+      for (let i = 0; i < cantos.length; i++) {
+        m.aguas.push({
+          x: cantos[i][0], y: cantos[i][1],
+          vx: (i % 2 ? 1 : -1) * (44 + i * 8), vy: (i % 2 ? -1 : 1) * (32 + i * 6),
+        });
+      }
+      m.bolhas = [];
+      for (let i = 0; i < 20; i++) {
+        m.bolhas.push({ x: Math.random() * MG_W, y: Math.random() * MG_H, v: 22 + Math.random() * 45, r: 2 + Math.random() * 3 });
+      }
+    },
+    atualizar: function (m, dt) {
+      const v = CONFIG.velMergulho * dt;
+      if (teclas.ArrowLeft) { m.x -= v; m.dir = -1; }
+      if (teclas.ArrowRight) { m.x += v; m.dir = 1; }
+      if (teclas.ArrowUp) m.y -= v;
+      if (teclas.ArrowDown) m.y += v;
+      m.x = Math.max(26, Math.min(MG_W - 26, m.x));
+      m.y = Math.max(26, Math.min(MG_H - 42, m.y));
+
+      for (const b of m.bolhas) {
+        b.y -= b.v * dt;
+        if (b.y < 0) { b.y = MG_H; b.x = Math.random() * MG_W; }
+      }
+
+      m.tPeixe -= dt;
+      if (m.tPeixe <= 0) {
+        const daEsquerda = Math.random() < 0.5;
+        m.peixes.push({
+          x: daEsquerda ? -24 : MG_W + 24,
+          y: 40 + Math.random() * (MG_H - 100),
+          v: (daEsquerda ? 1 : -1) * (75 + Math.random() * 55),
+        });
+        m.tPeixe = 0.7 + Math.random() * 0.6;
+      }
+      for (const p of m.peixes) {
+        p.x += p.v * dt;
+        if (!p.pego && Math.hypot(p.x - m.x, p.y - m.y) < 28) { p.pego = true; mgPegou(m, p.x, p.y); }
+      }
+      m.peixes = m.peixes.filter((p) => !p.pego && p.x > -50 && p.x < MG_W + 50);
+
+      for (const a of m.aguas) {
+        a.x += a.vx * dt;
+        a.y += a.vy * dt;
+        if (a.x < 28 || a.x > MG_W - 28) a.vx *= -1;
+        if (a.y < 28 || a.y > MG_H - 52) a.vy *= -1;
+        if (Math.hypot(a.x - m.x, a.y - m.y) < 28) mgOpa(m, a.x, a.y);
+      }
+    },
+    desenhar: function (m) {
+      mgFundo("#3f6fd1", "#0e2a55");
+      ctx.fillStyle = "rgba(127,196,255,0.25)";
+      for (const b of m.bolhas) ctx.fillRect(b.x | 0, b.y | 0, b.r | 0, b.r | 0);
+
+      // areia e algas no fundo
+      ctx.fillStyle = "#c2a06a"; ctx.fillRect(0, MG_H - 26, MG_W, 26);
+      // algas balançando: cada uma é uma pilha de pedacinhos, e quanto mais
+      // alto o pedaço, mais ele se mexe — sem isso pareciam postes verdes
+      for (let i = 0; i < 9; i++) {
+        const x = 24 + i * 52, gomos = 4 + ((i * 7) % 4);
+        for (let g = 0; g < gomos; g++) {
+          const p = g / gomos;
+          ctx.fillStyle = g % 2 ? "#3fa34d" : "#276b32";
+          ctx.fillRect(x + Math.sin(m.t * 2 + i + g * 0.6) * (3 + p * 7), MG_H - 30 - g * 9, 6, 10);
+        }
+      }
+
+      for (const p of m.peixes) spriteC(SPR.peixe, p.x, p.y, 3, null, p.v > 0);
+      for (const a of m.aguas) {
+        const flut = Math.sin(m.t * 3 + a.x) * 3;
+        spriteC(SPR.aguaViva, a.x, a.y + flut, 4);
+      }
+
+      const pisca = m.invenc > 0 && Math.floor(m.invenc * 12) % 2 === 0;
+      if (!pisca) spriteC(SPR.mergulhador, m.x, m.y, 4, null, m.dir < 0);
+      mgDesenharEfeitos(m);
     },
   },
 ];
@@ -2905,27 +3287,15 @@ function iniciarSala() {
   f7.msg = "";
   f7.msgT = 0;
 
-  // embaralha os canais pra ele ter que procurar o desenho de verdade
-  f7.canais = CANAIS.slice();
-  for (let i = f7.canais.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = f7.canais[i]; f7.canais[i] = f7.canais[j]; f7.canais[j] = tmp;
-  }
-  // e nunca começa já no desenho, senão não tem graça nenhuma
-  if (f7.canais[0].desenho) {
-    const tmp = f7.canais[0]; f7.canais[0] = f7.canais[2]; f7.canais[2] = tmp;
-  }
-  f7.canal = 0;
-  f7.zapT = 0;
+  f7.desenho = 0;
+  f7.mini = null;
+  f7.zoom = 0;
+  f7.saindo = false;
+  f7.sono = 0;
 
   f7.tutiX = 232;
   f7.olhando = -1;
   f7.andando = false;
-
-  f7.sono = 0;
-  f7.tPiada = CONFIG.intervaloPiada;
-  f7.piada = 0;
-  f7.risos = 0;
 
   f7.deitado = false;
   f7.nunaX = -50;
@@ -2942,54 +3312,39 @@ function atualizarSala(dt) {
   if (f7.msgT > 0) f7.msgT -= dt;
 
   if (f7.etapa === 0) {
-    // ---- ZAPEAR: procurar o desenho ----
-    // um toquinho rápido já troca de canal; segurando, ele passa de CONFIG.velZap
-    // em CONFIG.velZap. Só olhar pra tecla presa perdia toques curtos no celular.
-    f7.zapT -= dt;
-    let dir = 0;
-    if (foiApertada("ArrowRight")) dir = 1;
-    else if (foiApertada("ArrowLeft")) dir = -1;
-    else if (f7.zapT <= 0) dir = teclas.ArrowRight ? 1 : teclas.ArrowLeft ? -1 : 0;
-    if (dir) {
-      f7.canal = (f7.canal + dir + f7.canais.length) % f7.canais.length;
-      f7.zapT = CONFIG.velZap;
-      SFX.porta();
-    }
+    // ---- ESCOLHER: três capinhas, nenhuma errada ----
+    if (foiApertada("ArrowRight")) { f7.desenho = (f7.desenho + 1) % DESENHOS.length; SFX.coleta(); }
+    if (foiApertada("ArrowLeft")) { f7.desenho = (f7.desenho + DESENHOS.length - 1) % DESENHOS.length; SFX.coleta(); }
     if (foiApertada("Space")) {
-      if (f7.canais[f7.canal].desenho) {
-        jogo.pontos += 300;
-        SFX.item();
-        msgF7("ACHOU! É ESSE O DESENHO!", 2);
-        f7.etapa = 1;
-        f7.tt = 0;
-      } else {
-        SFX.porta();
-        msgF7("ESSE NÃO É! PROCURA O FOGUETE!", 2);
-      }
+      f7.mini = mgBase();
+      DESENHOS[f7.desenho].iniciar(f7.mini);
+      f7.etapa = 1;
+      f7.zoom = 0;
+      f7.saindo = false;
+      f7.sono = 0;
+      SFX.fase();
+      msgF7("COMEÇOU " + DESENHOS[f7.desenho].nome + "!", 2);
     }
 
   } else if (f7.etapa === 1) {
-    // ---- ASSISTIR: o sono vai subindo e às vezes o desenho fica engraçado ----
-    f7.sono = Math.min(100, f7.sono + CONFIG.sonoVel * dt);
-    f7.tPiada -= dt;
-    if (f7.tPiada <= 0) {
-      f7.piada = CONFIG.duracaoPiada;
-      f7.tPiada = CONFIG.intervaloPiada + Math.random() * 1.2;
-      SFX.coleta();
+    // ---- DENTRO DO DESENHO ----
+    // o zoom entrando e saindo é o que conta a história: a telinha da TV cresce
+    // até virar o mundo inteiro, e no fim do episódio encolhe de volta
+    if (f7.saindo) {
+      f7.zoom = Math.max(0, f7.zoom - dt / 0.5);
+      if (f7.zoom <= 0) { f7.etapa = 2; f7.tt = 0; msgF7("QUE SONO...", 2.4); }
+      return;
     }
-    if (f7.piada > 0) f7.piada -= dt;
-    if (foiApertada("Space") && f7.piada > 0) {
-      f7.piada = 0;
-      f7.risos++;
-      jogo.pontos += 120;
-      SFX.item();
-      msgF7("HAHAHA!", 1.2);
-    }
+    if (f7.zoom < 1) { f7.zoom = Math.min(1, f7.zoom + dt / 0.5); return; }
+
+    mgAtualizarEfeitos(f7.mini, dt);
+    DESENHOS[f7.desenho].atualizar(f7.mini, dt);
+    f7.sono = Math.min(100, f7.sono + (100 / CONFIG.duracaoEpisodio) * dt);
     if (f7.sono >= 100) {
-      f7.etapa = 2;
-      f7.tt = 0;
+      f7.saindo = true;
+      jogo.pontos += 300;
       SFX.fase();
-      msgF7("TÔ COM SONO...", 2.4);
+      msgF7("FIM DO EPISÓDIO!", 2.2);
     }
 
   } else if (f7.etapa === 2) {
@@ -3022,10 +3377,56 @@ function atualizarSala(dt) {
       if (f7.luz > 0.3) f7.tvLigada = false;
     }
     if (f7.luz >= 1 && (foiApertada("Space") || f7.tt > 12)) {
-      jogo.pontos += 1000 + f7.risos * 100;
+      jogo.pontos += 1000;
       SFX.vitoria();
       criarConfete();
       trocarEstado("VITORIA");
+    }
+  }
+}
+
+/* ---------- desenho ---------- */
+
+// desenha o joguinho escalado: p = 0 é do tamanho da telinha da TV, p = 1 é
+// tela cheia. Como o joguinho trabalha em coordenadas locais, basta escalar.
+function desenharDesenhoEmTela(p) {
+  const x = TV.sx + (16 - TV.sx) * p;
+  const y = TV.sy + (56 - TV.sy) * p;
+  const w = TV.sw + (MG_W - TV.sw) * p;
+  const h = TV.sh + (MG_H - TV.sh) * p;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.translate(x, y);
+  ctx.scale(w / MG_W, h / MG_H);
+  DESENHOS[f7.desenho].desenhar(f7.mini);
+  // riscos de tubo, pra lembrar que isso tudo ainda é a televisão
+  ctx.fillStyle = "rgba(0,0,0,0.10)";
+  for (let ly = 0; ly < MG_H; ly += 5) ctx.fillRect(0, ly, MG_W, 2);
+  ctx.restore();
+
+  ctx.strokeStyle = "#12131a"; ctx.lineWidth = 6;
+  ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+  ctx.strokeStyle = "#5d6272"; ctx.lineWidth = 2;
+  ctx.strokeRect(x - 5, y - 5, w + 10, h + 10);
+}
+
+function desenharMenuDesenhos() {
+  painel(24, 50, 432, 96, "#f7c948");
+  texto("QUAL DESENHO VOCÊ QUER VER?", W / 2, 54, { tam: 11, cor: "#f7c948" });
+
+  for (let i = 0; i < DESENHOS.length; i++) {
+    const d = DESENHOS[i];
+    const cx0 = 108 + i * 132, cy0 = 72, cw = 108, ch = 44;
+    const sel = i === f7.desenho;
+    ctx.fillStyle = sel ? "#f7c948" : "#3a3f4c";
+    ctx.fillRect(cx0 - cw / 2 - 3, cy0 - 3, cw + 6, ch + 20);
+    d.capa(cx0 - cw / 2, cy0, cw, ch);
+    texto(d.nome, cx0, cy0 + ch + 3, { tam: 9, cor: sel ? "#12131a" : "#c8c2ad", sombra: false });
+    if (sel && Math.floor(jogo.t * 5) % 2 === 0) {
+      ctx.fillStyle = "#f7c948";
+      ctx.fillRect(cx0 - cw / 2 - 14, cy0 + ch / 2 - 3, 8, 8);
+      ctx.fillRect(cx0 + cw / 2 + 6, cy0 + ch / 2 - 3, 8, 8);
     }
   }
 }
@@ -3038,7 +3439,7 @@ function desenharTV() {
 
   ctx.save();
   ctx.beginPath(); ctx.rect(TV.sx, TV.sy, TV.sw, TV.sh); ctx.clip();
-  if (f7.tvLigada) f7.canais[f7.canal].pintar(TV.sx, TV.sy, TV.sw, TV.sh);
+  if (f7.tvLigada) DESENHOS[f7.desenho].capa(TV.sx, TV.sy, TV.sw, TV.sh);
   else { ctx.fillStyle = "#1b1d26"; ctx.fillRect(TV.sx, TV.sy, TV.sw, TV.sh); }
   ctx.restore();
 
@@ -3105,7 +3506,6 @@ function desenharSala() {
       ctx.fillStyle = "#12131a"; ctx.fillRect(corpoX + 72, SOFA_ASSENTO - 16, 12, 16);
     }
     spriteC(SPR.tutiDormindo, cabeca, SOFA_ASSENTO - 16, 4);
-    // ZZZ subindo
     for (let i = 0; i < 3; i++) {
       const p = (jogo.t * 0.6 + i / 3) % 1;
       texto("Z", cabeca - 10 + p * 24, SOFA_ASSENTO - 36 - p * 46, {
@@ -3115,13 +3515,9 @@ function desenharSala() {
   } else {
     const q = f7.andando ? Math.floor(jogo.t * 8) % 2 : 0;
     // já perto de dormir os olhos ficam meio fechados
-    const olhoMole = f7.etapa >= 1 && f7.sono > 60 ? { k: "#a97e52" } : null;
+    const olhoMole = f7.etapa === 2 ? { k: "#a97e52" } : null;
     spriteC(q ? SPR.tutiLado1 : SPR.tutiLado0, f7.tutiX, PISO - 34, 4, olhoMole, f7.olhando === -1);
-    if (f7.etapa <= 1) spriteC(SPR.controle, f7.tutiX - 24, PISO - 36, 3);
-    if (f7.etapa === 1 && f7.sono > 55 && Math.floor(jogo.t * 0.7) % 2 === 0) {
-      painel(f7.tutiX - 44, PISO - 92, 88, 22, "#7fc4ff");
-      texto("AAAAH...", f7.tutiX, PISO - 88, { tam: 12, cor: "#7fc4ff" });
-    }
+    if (f7.etapa === 0) spriteC(SPR.controle, f7.tutiX - 24, PISO - 36, 3);
   }
 
   // ---- a Tia Nuna chegando com o cobertor ----
@@ -3133,12 +3529,13 @@ function desenharSala() {
     }
   }
 
-  // ---- "tá engraçado, ri agora!" ----
-  if (f7.etapa === 1 && f7.piada > 0) {
-    const pisca = Math.floor(jogo.t * 8) % 2 === 0;
-    painel(TV.x + 18, TV.y - 34, 92, 28, pisca ? "#f7c948" : "#e8853a");
-    texto(txAcao() + "!", TV.x + 64, TV.y - 29, { tam: 14, cor: "#f7c948" });
-    spriteC(SPR.estrela, TV.x + TV.w + 8, TV.y + 12, 3);
+  if (f7.etapa === 0) desenharMenuDesenhos();
+
+  // ---- o desenho tomando a tela ----
+  if (f7.etapa === 1) {
+    ctx.fillStyle = "rgba(9,11,20," + (0.6 * f7.zoom).toFixed(3) + ")";
+    ctx.fillRect(0, 0, W, H);
+    desenharDesenhoEmTela(f7.zoom);
   }
 
   // ---- setinha mostrando o sofá ----
@@ -3164,8 +3561,8 @@ function desenharSala() {
   if (f7.msgT > 0) {
     ctx.font = 'bold 15px "Courier New", monospace';
     const lt = ctx.measureText(f7.msg).width + 26;
-    painel(W / 2 - lt / 2, 62, lt, 28);
-    texto(f7.msg, W / 2, 68, { tam: 15, cor: "#f7c948" });
+    painel(W / 2 - lt / 2, H - 40, lt, 28);
+    texto(f7.msg, W / 2, H - 34, { tam: 15, cor: "#f7c948" });
   }
 
   if (f7.luz >= 1 && Math.floor(jogo.t * 2) % 2 === 0) {
@@ -3176,28 +3573,26 @@ function desenharSala() {
   desenharHudSala();
 }
 
-const SALA_TITULOS = ["ESCOLHE O DESENHO!", "HORA DO DESENHO!", "BORA PRO SOFÁ!", "BOA NOITE!"];
-
 function desenharHudSala() {
   painel(0, 0, W, HUD_H);
+  const d = DESENHOS[f7.desenho];
+  const titulos = ["ESCOLHE O DESENHO!", d.nome, "BORA PRO SOFÁ!", "BOA NOITE!"];
   const dicas = [
-    "← → TROCA O CANAL, " + txAcao() + " ESCOLHE",
-    "APERTE " + txAcao() + " QUANDO FICAR ENGRAÇADO",
+    "← → OLHA OS DESENHOS, " + txAcao() + " ESCOLHE",
+    d.dica.split("%A").join(txAcao()),
     "← → ANDA, " + txAcao() + " DEITA NO SOFÁ",
     "DURMA BEM, " + CONFIG.nomeMenino + "!",
   ];
   texto("FASE 7 — A NOITE NA SALA", 10, 5, { tam: 10, align: "left", cor: "#f3c39a" });
-  texto(SALA_TITULOS[f7.etapa], 10, 18, { tam: 15, align: "left", cor: "#f7c948" });
+  texto(titulos[f7.etapa], 10, 18, { tam: 15, align: "left", cor: "#f7c948" });
   texto(dicas[f7.etapa], 470, 5, { tam: 10, align: "right", cor: "#c8c2ad" });
 
-  if (f7.etapa === 0) {
-    texto("CANAL " + (f7.canal + 1) + ": " + f7.canais[f7.canal].nome, 470, 20,
-      { tam: 11, align: "right", cor: f7.canais[f7.canal].desenho ? "#3fa34d" : "#ffffff" });
-  } else if (f7.etapa === 1) {
-    texto("SONO", 286, 22, { tam: 10, align: "left", cor: "#f3c39a" });
-    barra(330, 20, 136, 16, f7.sono / 100, "#7fc4ff");
-  } else if (f7.etapa >= 2) {
-    texto("RISADAS: " + f7.risos, 470, 20, { tam: 12, align: "right", cor: "#f2a3c7" });
+  if (f7.mini) {
+    texto("PEGOU: " + f7.mini.coletados, 178, 21, { tam: 12, align: "left", cor: "#f2a3c7" });
+  }
+  if (f7.etapa === 1) {
+    texto("SONO", 268, 22, { tam: 10, align: "left", cor: "#f3c39a" });
+    barra(302, 20, 164, 16, f7.sono / 100, "#7fc4ff");
   }
 }
 
