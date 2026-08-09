@@ -1,29 +1,107 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d16">
 <title>Tia Motora em Missão! — O jogo do Tuti</title>
 <style>
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     background: #0b0d16;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
     font-family: "Courier New", monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none; overscroll-behavior: none;
   }
+  body { display: flex; flex-direction: column; }
+
+  /* o palco encolhe sozinho pra caber o que sobrar depois dos controles */
+  #palco {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px;
+  }
+  /* max-width + max-height num canvas mantém a proporção 4:3 sozinho */
   canvas {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
-    width: min(100vw, calc((100vh - 34px) * 4 / 3));
-    height: auto;
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
     display: block;
     box-shadow: 0 0 0 3px #f7c948, 0 0 44px rgba(0,0,0,.9);
   }
   #rodape {
+    flex: 0 0 auto;
     color: #f7c948; font-size: 12px; letter-spacing: 1px;
-    margin-top: 8px; text-align: center; user-select: none;
+    padding: 6px 0 10px; text-align: center;
+  }
+
+  /* ---- controles de toque: só aparecem no celular / tablet ---- */
+  #controles { display: none; }
+  body.toque #rodape { display: none; }
+  body.toque #controles {
+    display: flex; flex: 0 0 auto;
+    align-items: flex-end; justify-content: space-between;
+    padding: 6px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box; width: 100%;
+  }
+
+  .bt {
+    -webkit-appearance: none; appearance: none;
+    font-family: inherit; font-weight: bold; color: #12131a;
+    background: #f7c948; border: 3px solid #12131a; border-radius: 12px;
+    box-shadow: 0 4px 0 #8a6c14;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: none; padding: 0;
+  }
+  .bt.press { background: #ffe58a; transform: translateY(3px); box-shadow: 0 1px 0 #8a6c14; }
+
+  #dpad { display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 52px); gap: 4px; }
+  #dpad .bt { width: 58px; height: 52px; font-size: 20px; }
+  .cima  { grid-area: 1 / 2; }
+  .esq   { grid-area: 2 / 1; }
+  .dir   { grid-area: 2 / 3; }
+  .baixo { grid-area: 3 / 2; }
+
+  #acoes { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  #extras { display: flex; gap: 8px; }
+  #extras .bt { width: 46px; height: 34px; font-size: 15px; background: #5d6272; color: #ffffff; box-shadow: 0 4px 0 #2b2f3d; }
+  #extras .bt.press { background: #a9afc0; box-shadow: 0 1px 0 #2b2f3d; }
+  .acao { width: 108px; height: 78px; border-radius: 50%; font-size: 16px; letter-spacing: 1px; background: #f2a3c7; box-shadow: 0 5px 0 #a05c7b; }
+  .acao.press { background: #ffd0e4; box-shadow: 0 1px 0 #a05c7b; }
+
+  /* deitado: os controles vão pras laterais e o palco encolhe pra não ficar
+     nenhum botão em cima do jogo */
+  @media (orientation: landscape) {
+    body.toque #controles {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      pointer-events: none; padding-bottom: 10px;
+    }
+    body.toque #controles > * { pointer-events: auto; }
+    body.toque #palco { padding: 4px 172px; }
+    #dpad { grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 44px); }
+    #dpad .bt { width: 50px; height: 44px; }
+    .acao { width: 96px; height: 68px; }
+    #extras .bt { width: 42px; height: 30px; }
   }
 </style>
 
-<canvas id="tela" width="480" height="360"></canvas>
+<div id="palco"><canvas id="tela" width="480" height="360"></canvas></div>
 <div id="rodape">SETAS = MOVER &nbsp;•&nbsp; ESPAÇO = AÇÃO &nbsp;•&nbsp; P = PAUSA &nbsp;•&nbsp; M = SOM</div>
+
+<div id="controles">
+  <div id="dpad">
+    <button class="bt cima"  data-code="ArrowUp">▲</button>
+    <button class="bt esq"   data-code="ArrowLeft">◀</button>
+    <button class="bt dir"   data-code="ArrowRight">▶</button>
+    <button class="bt baixo" data-code="ArrowDown">▼</button>
+  </div>
+  <div id="acoes">
+    <div id="extras">
+      <button class="bt" data-code="KeyP">II</button>
+      <button class="bt" data-code="KeyM">♪</button>
+    </div>
+    <button class="bt acao" data-code="Space">AÇÃO</button>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -91,6 +169,12 @@ const CONFIG = {
   velNunaFuga: 148,
   descansoNuna: 5.5,        // de quanto em quanto tempo ela para pra respirar
   descansoDur: 1.6,
+
+  // ---- FASE 7: a noite na sala (fase final, também não tem como perder) ----
+  sonoVel: 7.5,             // quanto o sono sobe por segundo assistindo o desenho
+  intervaloPiada: 2.4,      // de quanto em quanto tempo o desenho fica engraçado
+  duracaoPiada: 1.4,        // e por quanto tempo dá pra rir apertando o botão
+  velZap: 0.2,              // segurando ← →, tempo entre um canal e outro
 
   // ---- FASE 2: desafios na escola ----
   velTuti: 118,
@@ -236,8 +320,8 @@ SPR.nuna = [
   "..hhhhhhhh..",
   ".hhhhhhhhhh.",
   ".hhsssssshh.",
-  ".hrrrssrrrh.",   // aro de cima das duas lentes
-  ".hrkrrrrkrh.",   // lentes e ponte, com as pupilas pretas dentro
+  ".hssssssssh.",
+  ".hskssssksh.",   // olhinhos
   ".hssssssssh.",
   ".hsssppsssh.",
   ".hhsssssshh.",
@@ -611,6 +695,31 @@ SPR.casinhaCao = [
   "ffffffffffff",
 ];
 
+/* ---- coisas da sala de estar (fase da noite) ---- */
+SPR.controle = [        // controle remoto da TV
+  "kkkkkk",
+  "krrrrk",
+  "kkkkkk",
+  "kwkwkk",
+  "kwkwkk",
+  "kwkwkk",
+  "kkkkkk",
+];
+
+SPR.foguete = [         // o desenho preferido do Tuti passando na TV
+  "....ww....",
+  "...wwww...",
+  "..wwrrww..",
+  "..wwrrww..",
+  "..wwwwww..",
+  ".wwwwwwww.",
+  "rwwwwwwwwr",
+  "rwwwwwwwwr",
+  ".r.oyyo.r.",
+  "...oyyo...",
+  "....oo....",
+];
+
 // carinha pequena, usada no contador de amigos do HUD
 SPR.carinha = [
   ".HHHHH.",
@@ -750,7 +859,9 @@ const SFX = {
 };
 
 /* --------------------------------------------------------------------------
-   TECLADO
+   CONTROLES — teclado e, no celular, os botões da tela
+   Os dois caminhos passam por apertar()/soltar(), então o jogo inteiro só
+   precisa saber de "teclas", "apertadas" e "ordemSetas".
    -------------------------------------------------------------------------- */
 const teclas = {};
 const apertadas = new Set();
@@ -758,25 +869,71 @@ const ordemSetas = [];          // setas na ordem em que foram pressionadas
 const SETAS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
 const BLOQUEAR = SETAS.concat(["Space"]);
 
+function apertar(code) {
+  acordarAudio();
+  if (!teclas[code]) {
+    apertadas.add(code);
+    if (SETAS.indexOf(code) >= 0) ordemSetas.push(code);
+  }
+  teclas[code] = true;
+}
+
+function soltar(code) {
+  teclas[code] = false;
+  const i = ordemSetas.indexOf(code);
+  if (i >= 0) ordemSetas.splice(i, 1);
+}
+
+function soltarTudo() { for (const k in teclas) teclas[k] = false; ordemSetas.length = 0; }
+
 addEventListener("keydown", (e) => {
   if (BLOQUEAR.indexOf(e.code) >= 0) e.preventDefault();
-  acordarAudio();
-  if (!teclas[e.code]) {
-    apertadas.add(e.code);
-    if (SETAS.indexOf(e.code) >= 0) ordemSetas.push(e.code);
-  }
-  teclas[e.code] = true;
+  apertar(e.code);
 });
 
-addEventListener("keyup", (e) => {
-  teclas[e.code] = false;
-  const i = ordemSetas.indexOf(e.code);
-  if (i >= 0) ordemSetas.splice(i, 1);
-});
+addEventListener("keyup", (e) => soltar(e.code));
 
-addEventListener("blur", () => { for (const k in teclas) teclas[k] = false; ordemSetas.length = 0; });
+addEventListener("blur", soltarTudo);
 
 function foiApertada(code) { return apertadas.has(code); }
+
+/* ---- botões de toque ---- */
+// no celular não existe "ESPAÇO": os textos da tela trocam pra "AÇÃO"
+let ehToque = false;
+function txAcao() { return ehToque ? "AÇÃO" : "ESPAÇO"; }
+
+function ligarToque() {
+  if (ehToque) return;
+  ehToque = true;
+  document.body.classList.add("toque");
+}
+// "pointer: coarse" = o ponteiro principal é um dedo (celular/tablet). Num
+// notebook com tela sensível o teclado continua sendo o principal, então os
+// botões só aparecem se ele realmente encostar na tela.
+if (matchMedia("(pointer: coarse)").matches) ligarToque();
+addEventListener("touchstart", ligarToque, { passive: true });
+
+for (const bt of document.querySelectorAll("#controles .bt")) {
+  const code = bt.dataset.code;
+  // o ponteiro fica preso no botão: escorregar o dedo pra fora não deixa a
+  // "tecla" grudada apertada
+  bt.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    ligarToque();
+    if (bt.setPointerCapture) bt.setPointerCapture(e.pointerId);
+    bt.classList.add("press");
+    apertar(code);
+  });
+  const largar = (e) => {
+    if (e) e.preventDefault();
+    bt.classList.remove("press");
+    soltar(code);
+  };
+  bt.addEventListener("pointerup", largar);
+  bt.addEventListener("pointercancel", largar);
+  bt.addEventListener("lostpointercapture", largar);
+  bt.addEventListener("contextmenu", (e) => e.preventDefault());
+}
 
 /* --------------------------------------------------------------------------
    ESTADO GERAL
@@ -835,7 +992,7 @@ function desenharTransicao() {
   texto("PONTOS: " + Math.floor(jogo.pontos), W / 2, 202, { tam: 15, cor: "#f7c948" });
 
   if (Math.floor(jogo.t * 2) % 2 === 0)
-    texto("APERTE ESPAÇO", W / 2, 336, { tam: 15, cor: "#f7c948" });
+    texto("APERTE " + txAcao(), W / 2, 336, { tam: 15, cor: "#f7c948" });
 }
 
 function tremer(f) { jogo.tremor = Math.max(jogo.tremor, f || 0.35); }
@@ -860,10 +1017,10 @@ function perderVida() {
       2 dentes (← →)                  3 vestir (← → + ESPAÇO)   4 sair
    ========================================================================== */
 const TAREFAS = [
-  { titulo: "HORA DE ACORDAR!", dica: "APERTE ESPAÇO SEM PARAR!" },
+  { titulo: "HORA DE ACORDAR!", dica: "APERTE %A SEM PARAR!" },
   { titulo: "CAFÉ DA MANHÃ!", dica: "USE ← → PRA PEGAR A COMIDA" },
   { titulo: "ESCOVAR OS DENTES!", dica: "USE ← → PRA ESFREGAR" },
-  { titulo: "SE ARRUMAR PRA SAIR!", dica: "← → PRA ANDAR, ESPAÇO PRA VESTIR" },
+  { titulo: "SE ARRUMAR PRA SAIR!", dica: "← → PRA ANDAR, %A PRA VESTIR" },
 ];
 
 const ROUPAS = [
@@ -1181,7 +1338,7 @@ function desenharManha() {
     texto('TEM ESCOLA!"', 216, 146, { tam: 11 });
 
     if (Math.floor(jogo.t * 2) % 2 === 0)
-      texto("APERTE ESPAÇO PRA COMEÇAR", W / 2, 334, { tam: 14, cor: "#f7c948" });
+      texto("APERTE " + txAcao() + " PRA COMEÇAR", W / 2, 334, { tam: 14, cor: "#f7c948" });
     return;
   }
 
@@ -1207,7 +1364,7 @@ function desenharManha() {
     texto('"BORA, ' + CONFIG.nomeMenino + '! ENTRA NO CARRO', W / 2, 102, { tam: 12, cor: "#f2a3c7" });
     texto('QUE A GENTE TÁ ATRASADO!"', W / 2, 118, { tam: 12, cor: "#f2a3c7" });
     if (Math.floor(jogo.t * 2) % 2 === 0)
-      texto("ESPAÇO = COMEÇAR A CORRIDA", W / 2, 332, { tam: 14, cor: "#ffffff" });
+      texto(txAcao() + " = COMEÇAR A CORRIDA", W / 2, 332, { tam: 14, cor: "#ffffff" });
     return;
   }
 
@@ -1275,7 +1432,7 @@ function desenharManha() {
     spriteC(q ? SPR.tutiLado1 : SPR.tutiLado0, f0.tutiX, 300, 3, corTuti(), f0.olhando === -1);
     if (f0.perto) {
       painel(f0.tutiX - 46, 248, 92, 22, "#f7c948");
-      texto("ESPAÇO!", f0.tutiX, 252, { tam: 12, cor: "#f7c948" });
+      texto(txAcao() + "!", f0.tutiX, 252, { tam: 12, cor: "#f7c948" });
     }
   }
 
@@ -1294,7 +1451,7 @@ function desenharHudManha() {
   const t = TAREFAS[f0.tarefa];
   texto("TAREFA " + (f0.tarefa + 1) + "/" + TAREFAS.length, 10, 6, { tam: 10, align: "left", cor: "#f3c39a" });
   texto(t.titulo, 10, 20, { tam: 15, align: "left", cor: "#f7c948" });
-  texto(t.dica, 470, 6, { tam: 10, align: "right", cor: "#c8c2ad" });
+  texto(t.dica.split("%A").join(txAcao()), 470, 6, { tam: 10, align: "right", cor: "#c8c2ad" });
   barra(300, 20, 170, 16, f0.prog / 100, "#3fa34d");
 }
 
@@ -1855,7 +2012,7 @@ function desenharFase1() {
     }
     texto(f1.volta ? "CHEGAMOS EM CASA!" : "CHEGAMOS NA ESCOLA!", W / 2, 250, { tam: 20, cor: "#f7c948" });
   } else if (f1.turboCd <= 0) {
-    texto("ESPAÇO = TURBO!", W / 2, H - 26, { tam: 12, cor: "#f7c948" });
+    texto(txAcao() + " = TURBO!", W / 2, H - 26, { tam: 12, cor: "#f7c948" });
   }
 
   ctx.restore();
@@ -2426,7 +2583,7 @@ function desenharRecreio() {
   for (const l of f4.locais) { const dd = distAte(l); if (dd < dp) { dp = dd; perto = l; } }
   if (perto && dp <= CONFIG.alcanceEspiar && !perto.espiado) {
     painel(f4.x - 46, f4.y - 46, 92, 22, "#f7c948");
-    texto("ESPAÇO!", f4.x, f4.y - 42, { tam: 12, cor: "#f7c948" });
+    texto(txAcao() + "!", f4.x, f4.y - 42, { tam: 12, cor: "#f7c948" });
   }
 
   if (f4.msgT > 0) {
@@ -2580,9 +2737,12 @@ function atualizarQuintal(dt) {
   if (f6.fugitivos.every((g) => g.pego)) {
     // quanto mais rápido, mais ponto
     jogo.pontos += 800 + Math.max(0, Math.round((60 - f6.tempo) * 20));
-    SFX.vitoria();
-    criarConfete();
-    trocarEstado("VITORIA");
+    mostrarTransicao(
+      "PEGOU TODO MUNDO!",
+      "O DIA FOI LONGO E JÁ ANOITECEU...",
+      "AGORA UM DESENHO NA SALA ANTES DE DORMIR!",
+      iniciarSala
+    );
   }
 }
 
@@ -2658,6 +2818,390 @@ function desenharQuintal() {
 }
 
 /* ==========================================================================
+   FASE 7 — A NOITE NA SALA DE CASA
+   Fecha o dia: o Tuti escolhe o desenho na TV, assiste até o sono bater e vai
+   dormir no sofá. Igual à manhã, não dá pra perder — é despedida, não desafio.
+     0 zapear   1 assistir   2 andar até o sofá   3 a tia cobre e apaga a luz
+   ========================================================================== */
+const PAREDE_Y = 300;     // onde a parede encontra o chão
+const PISO = 318;         // linha em que pés e móveis encostam
+const TV = { x: 60, y: 150, w: 128, h: 100, sx: 68, sy: 158, sw: 112, sh: 76 };
+// o encosto do sofá fica logo abaixo da cabeça do Tuti (que mede 68px aqui):
+// se o sofá subisse mais, a sala virava um mundo de gigantes
+const SOFA = { x: 284, y: 256, w: 176 };
+
+// cada canal pinta a própria telinha. Só um é o desenho certo.
+const CANAIS = [
+  {
+    nome: "JORNAL", desenho: false,
+    pintar: function (x, y, w, h) {
+      ctx.fillStyle = "#1b2740"; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(x + w - 46, y + 10, 38, 34);
+      ctx.fillStyle = "#f3c39a"; ctx.fillRect(x + 20, y + 18, 22, 20);   // cabeça
+      ctx.fillStyle = "#12131a"; ctx.fillRect(x + 20, y + 14, 22, 7);
+      ctx.fillStyle = "#2b2f3d"; ctx.fillRect(x + 12, y + 38, 38, 22);   // terno
+      ctx.fillStyle = "#c8c2ad"; ctx.fillRect(x + 28, y + 38, 6, 22);
+      ctx.fillStyle = "#d9463c"; ctx.fillRect(x, y + h - 20, w, 16);
+      texto("NOTÍCIAS", x + w / 2, y + h - 17, { tam: 9, cor: "#ffffff" });
+    },
+  },
+  {
+    nome: "CHUVISCO", desenho: false,
+    pintar: function (x, y, w, h) {
+      ctx.fillStyle = "#2b2f3d"; ctx.fillRect(x, y, w, h);
+      for (let i = 0; i < 150; i++) {
+        ctx.fillStyle = Math.random() < 0.5 ? "#a9afc0" : "#5d6272";
+        ctx.fillRect((x + Math.random() * w) | 0, (y + Math.random() * h) | 0, 3, 3);
+      }
+    },
+  },
+  {
+    nome: "FUTEBOL", desenho: false,
+    pintar: function (x, y, w, h) {
+      ctx.fillStyle = "#3fa34d"; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#4fb35d"; for (let i = 0; i < w; i += 22) ctx.fillRect(x + i, y, 11, h);
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 6, y + 6, w - 12, h - 12);
+      ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, 14, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#d9463c"; ctx.fillRect(x + 26, y + 28, 8, 16);
+      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(x + w - 36, y + 34, 8, 16);
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(x + w / 2 - 4, y + h - 26, 8, 8);
+    },
+  },
+  {
+    nome: "NOVELA", desenho: false,
+    pintar: function (x, y, w, h) {
+      ctx.fillStyle = "#7a4f6a"; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#b0793f"; ctx.fillRect(x + 20, y + 22, 22, 22);
+      ctx.fillStyle = "#f3c39a"; ctx.fillRect(x + 23, y + 26, 16, 18);
+      ctx.fillStyle = "#7a4a24"; ctx.fillRect(x + w - 42, y + 22, 22, 22);
+      ctx.fillStyle = "#f3c39a"; ctx.fillRect(x + w - 39, y + 26, 16, 18);
+      sprite(SPR.coracao, x + w / 2 - 7, y + 24, 2);
+      texto("AI, AMOR!", x + w / 2, y + h - 22, { tam: 9, cor: "#f2a3c7" });
+    },
+  },
+  {
+    nome: "O FOGUETE DO " + CONFIG.nomeMenino, desenho: true,
+    pintar: function (x, y, w, h) {
+      ctx.fillStyle = "#101936"; ctx.fillRect(x, y, w, h);
+      for (let i = 0; i < 22; i++) {
+        ctx.fillStyle = i % 3 === 0 ? "#f7c948" : "#ffffff";
+        ctx.fillRect(x + ((i * 43 + i * i * 7) % w) | 0, y + ((i * 29 + i * i * 3) % h) | 0, 2, 2);
+      }
+      ctx.fillStyle = "#c8c2ad";                                  // lua
+      ctx.fillRect(x + w - 26, y + 8, 14, 14);
+      const sobe = Math.sin(jogo.t * 3) * 4;
+      spriteC(SPR.foguete, x + w / 2, y + h / 2 + sobe, 4);
+    },
+  },
+];
+
+const f7 = {};
+
+function iniciarSala() {
+  abrirFase("FASE 7 — A NOITE NA SALA", iniciarSala);
+  f7.etapa = 0;
+  f7.tt = 0;
+  f7.msg = "";
+  f7.msgT = 0;
+
+  // embaralha os canais pra ele ter que procurar o desenho de verdade
+  f7.canais = CANAIS.slice();
+  for (let i = f7.canais.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = f7.canais[i]; f7.canais[i] = f7.canais[j]; f7.canais[j] = tmp;
+  }
+  // e nunca começa já no desenho, senão não tem graça nenhuma
+  if (f7.canais[0].desenho) {
+    const tmp = f7.canais[0]; f7.canais[0] = f7.canais[2]; f7.canais[2] = tmp;
+  }
+  f7.canal = 0;
+  f7.zapT = 0;
+
+  f7.tutiX = 232;
+  f7.olhando = -1;
+  f7.andando = false;
+
+  f7.sono = 0;
+  f7.tPiada = CONFIG.intervaloPiada;
+  f7.piada = 0;
+  f7.risos = 0;
+
+  f7.deitado = false;
+  f7.nunaX = -50;
+  f7.coberto = false;
+  f7.luz = 0;              // 0 = tudo aceso, 1 = luz apagada
+  f7.tvLigada = true;
+  trocarEstado("SALA");
+}
+
+function msgF7(txt, dur) { f7.msg = txt; f7.msgT = dur || 1.8; }
+
+function atualizarSala(dt) {
+  f7.tt += dt;
+  if (f7.msgT > 0) f7.msgT -= dt;
+
+  if (f7.etapa === 0) {
+    // ---- ZAPEAR: procurar o desenho ----
+    // um toquinho rápido já troca de canal; segurando, ele passa de CONFIG.velZap
+    // em CONFIG.velZap. Só olhar pra tecla presa perdia toques curtos no celular.
+    f7.zapT -= dt;
+    let dir = 0;
+    if (foiApertada("ArrowRight")) dir = 1;
+    else if (foiApertada("ArrowLeft")) dir = -1;
+    else if (f7.zapT <= 0) dir = teclas.ArrowRight ? 1 : teclas.ArrowLeft ? -1 : 0;
+    if (dir) {
+      f7.canal = (f7.canal + dir + f7.canais.length) % f7.canais.length;
+      f7.zapT = CONFIG.velZap;
+      SFX.porta();
+    }
+    if (foiApertada("Space")) {
+      if (f7.canais[f7.canal].desenho) {
+        jogo.pontos += 300;
+        SFX.item();
+        msgF7("ACHOU! É ESSE O DESENHO!", 2);
+        f7.etapa = 1;
+        f7.tt = 0;
+      } else {
+        SFX.porta();
+        msgF7("ESSE NÃO É! PROCURA O FOGUETE!", 2);
+      }
+    }
+
+  } else if (f7.etapa === 1) {
+    // ---- ASSISTIR: o sono vai subindo e às vezes o desenho fica engraçado ----
+    f7.sono = Math.min(100, f7.sono + CONFIG.sonoVel * dt);
+    f7.tPiada -= dt;
+    if (f7.tPiada <= 0) {
+      f7.piada = CONFIG.duracaoPiada;
+      f7.tPiada = CONFIG.intervaloPiada + Math.random() * 1.2;
+      SFX.coleta();
+    }
+    if (f7.piada > 0) f7.piada -= dt;
+    if (foiApertada("Space") && f7.piada > 0) {
+      f7.piada = 0;
+      f7.risos++;
+      jogo.pontos += 120;
+      SFX.item();
+      msgF7("HAHAHA!", 1.2);
+    }
+    if (f7.sono >= 100) {
+      f7.etapa = 2;
+      f7.tt = 0;
+      SFX.fase();
+      msgF7("TÔ COM SONO...", 2.4);
+    }
+
+  } else if (f7.etapa === 2) {
+    // ---- ANDAR ATÉ O SOFÁ ----
+    const v = CONFIG.velQuarto * dt;
+    if (teclas.ArrowLeft) { f7.tutiX -= v; f7.olhando = -1; }
+    if (teclas.ArrowRight) { f7.tutiX += v; f7.olhando = 1; }
+    f7.tutiX = Math.max(60, Math.min(430, f7.tutiX));
+    f7.andando = !!(teclas.ArrowLeft || teclas.ArrowRight);
+
+    f7.pertoSofa = Math.abs(f7.tutiX - (SOFA.x + SOFA.w / 2)) < 70;
+    if (f7.pertoSofa && foiApertada("Space")) {
+      f7.deitado = true;
+      f7.etapa = 3;
+      f7.tt = 0;
+      SFX.fase();
+    }
+
+  } else {
+    // ---- A TIA COBRE ELE E APAGA A LUZ ----
+    if (f7.tt > 1.2 && !f7.coberto) f7.nunaX = Math.min(252, f7.nunaX + 78 * dt);
+    if (f7.nunaX >= 252 && !f7.coberto) {
+      f7.coberto = true;
+      jogo.pontos += 500;
+      SFX.item();
+      msgF7("BOA NOITE, " + CONFIG.nomeMenino + "!", 3.2);
+    }
+    if (f7.coberto) {
+      f7.luz = Math.min(1, f7.luz + dt * 0.45);
+      if (f7.luz > 0.3) f7.tvLigada = false;
+    }
+    if (f7.luz >= 1 && (foiApertada("Space") || f7.tt > 12)) {
+      jogo.pontos += 1000 + f7.risos * 100;
+      SFX.vitoria();
+      criarConfete();
+      trocarEstado("VITORIA");
+    }
+  }
+}
+
+function desenharTV() {
+  ctx.fillStyle = "#4a3b52"; ctx.fillRect(108, 250, 32, 58);      // pé
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(76, 308, 96, 10);       // base
+  ctx.fillStyle = "#3a3f4c"; ctx.fillRect(TV.x, TV.y, TV.w, TV.h);
+  ctx.fillStyle = "#12131a"; ctx.fillRect(TV.x + 4, TV.y + 4, TV.w - 8, TV.h - 8);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(TV.sx, TV.sy, TV.sw, TV.sh); ctx.clip();
+  if (f7.tvLigada) f7.canais[f7.canal].pintar(TV.sx, TV.sy, TV.sw, TV.sh);
+  else { ctx.fillStyle = "#1b1d26"; ctx.fillRect(TV.sx, TV.sy, TV.sw, TV.sh); }
+  ctx.restore();
+
+  ctx.fillStyle = f7.tvLigada ? "#3fa34d" : "#5d6272";
+  ctx.fillRect(TV.x + TV.w - 16, TV.y + TV.h - 12, 6, 6);
+}
+
+const SOFA_ASSENTO = 290;    // altura da superfície onde ele senta / deita
+
+function desenharSofa() {
+  const s = SOFA;
+  ctx.fillStyle = "#5c3f6b"; ctx.fillRect(s.x, s.y, s.w, 46);                 // encosto
+  ctx.fillStyle = "#6f4d80"; ctx.fillRect(s.x + 12, s.y + 8, s.w - 24, 30);
+  ctx.fillStyle = "#f2a3c7"; ctx.fillRect(s.x + s.w - 60, s.y + 10, 30, 26);  // almofada
+  ctx.fillStyle = "#6f4d80"; ctx.fillRect(s.x + 20, SOFA_ASSENTO, s.w - 40, 18);
+  ctx.fillStyle = "#7d5990"; ctx.fillRect(s.x + 22, SOFA_ASSENTO + 2, s.w - 44, 3);
+  ctx.fillStyle = "#5c3f6b"; ctx.fillRect(s.x, 282, 22, PISO - 282);          // braços
+  ctx.fillRect(s.x + s.w - 22, 282, 22, PISO - 282);
+  ctx.fillStyle = "#4b3358"; ctx.fillRect(s.x + 20, 308, s.w - 40, PISO - 308);
+}
+
+function desenharSala() {
+  // ---- parede, chão e tapete ----
+  ctx.fillStyle = "#6e5a7a"; ctx.fillRect(0, HUD_H, W, PAREDE_Y - HUD_H);
+  ctx.fillStyle = "#65526f";
+  for (let x = 0; x < W; x += 30) ctx.fillRect(x, HUD_H, 3, PAREDE_Y - HUD_H);
+  ctx.fillStyle = "#4a3b52"; ctx.fillRect(0, PAREDE_Y - 8, W, 8);
+  ctx.fillStyle = "#8b5a2b"; ctx.fillRect(0, PAREDE_Y, W, H - PAREDE_Y);
+  ctx.fillStyle = "#6b421d";
+  for (let x = 0; x < W; x += 44) ctx.fillRect(x, PAREDE_Y, 2, H - PAREDE_Y);
+  ctx.fillStyle = "#a8402f"; ctx.fillRect(92, 326, 232, 28);
+  ctx.fillStyle = "#d9463c"; ctx.fillRect(98, 330, 220, 20);
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(112, 338, 192, 4);
+
+  // ---- janela da noite, em cima do sofá ----
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(322, 88, 100, 72);
+  ctx.fillStyle = "#101936"; ctx.fillRect(328, 94, 88, 60);
+  ctx.fillStyle = "#f7c948";
+  for (let i = 0; i < 10; i++) ctx.fillRect(330 + (i * 31) % 84, 96 + (i * 17) % 54, 2, 2);
+  ctx.fillStyle = "#fff2b0"; ctx.fillRect(392, 100, 14, 14);       // lua
+  ctx.fillStyle = "#101936"; ctx.fillRect(388, 100, 8, 14);
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(370, 94, 4, 60); ctx.fillRect(328, 120, 88, 4);
+
+  // ---- quadrinho na parede ----
+  ctx.fillStyle = "#8b5a2b"; ctx.fillRect(206, 108, 62, 50);
+  ctx.fillStyle = "#e8dcc0"; ctx.fillRect(210, 112, 54, 42);
+  sprite(SPR.carinha, 218, 122, 3, { H: "#7a4a24" });
+  sprite(SPR.coracao, 244, 126, 2);
+
+  desenharTV();
+  desenharSofa();
+
+  // ---- o Tuti ----
+  if (f7.deitado) {
+    // deitado no sofá, com a cabeça apoiada no braço da esquerda
+    const cabeca = SOFA.x + 40, corpoX = SOFA.x + 62;
+    if (f7.coberto) {
+      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(corpoX, SOFA_ASSENTO - 24, 84, 24);
+      ctx.fillStyle = "#7fc4ff"; ctx.fillRect(corpoX, SOFA_ASSENTO - 24, 84, 6);
+      ctx.fillStyle = "#2b4f9e"; ctx.fillRect(corpoX, SOFA_ASSENTO - 9, 84, 4);
+    } else {
+      ctx.fillStyle = "#3fa34d"; ctx.fillRect(corpoX, SOFA_ASSENTO - 22, 46, 22);
+      ctx.fillStyle = "#223a72"; ctx.fillRect(corpoX + 42, SOFA_ASSENTO - 19, 32, 19);
+      ctx.fillStyle = "#12131a"; ctx.fillRect(corpoX + 72, SOFA_ASSENTO - 16, 12, 16);
+    }
+    spriteC(SPR.tutiDormindo, cabeca, SOFA_ASSENTO - 16, 4);
+    // ZZZ subindo
+    for (let i = 0; i < 3; i++) {
+      const p = (jogo.t * 0.6 + i / 3) % 1;
+      texto("Z", cabeca - 10 + p * 24, SOFA_ASSENTO - 36 - p * 46, {
+        tam: 10 + i * 3, cor: "#ffffff", sombra: "#12131a",
+      });
+    }
+  } else {
+    const q = f7.andando ? Math.floor(jogo.t * 8) % 2 : 0;
+    // já perto de dormir os olhos ficam meio fechados
+    const olhoMole = f7.etapa >= 1 && f7.sono > 60 ? { k: "#a97e52" } : null;
+    spriteC(q ? SPR.tutiLado1 : SPR.tutiLado0, f7.tutiX, PISO - 34, 4, olhoMole, f7.olhando === -1);
+    if (f7.etapa <= 1) spriteC(SPR.controle, f7.tutiX - 24, PISO - 36, 3);
+    if (f7.etapa === 1 && f7.sono > 55 && Math.floor(jogo.t * 0.7) % 2 === 0) {
+      painel(f7.tutiX - 44, PISO - 92, 88, 22, "#7fc4ff");
+      texto("AAAAH...", f7.tutiX, PISO - 88, { tam: 12, cor: "#7fc4ff" });
+    }
+  }
+
+  // ---- a Tia Nuna chegando com o cobertor ----
+  if (f7.etapa === 3 && f7.nunaX > -40) {
+    spriteC(SPR.nuna, f7.nunaX, PISO - 42, 4);
+    if (!f7.coberto) {
+      ctx.fillStyle = "#3f6fd1"; ctx.fillRect(f7.nunaX + 20, PISO - 52, 30, 20);
+      ctx.fillStyle = "#7fc4ff"; ctx.fillRect(f7.nunaX + 20, PISO - 52, 30, 6);
+    }
+  }
+
+  // ---- "tá engraçado, ri agora!" ----
+  if (f7.etapa === 1 && f7.piada > 0) {
+    const pisca = Math.floor(jogo.t * 8) % 2 === 0;
+    painel(TV.x + 18, TV.y - 34, 92, 28, pisca ? "#f7c948" : "#e8853a");
+    texto(txAcao() + "!", TV.x + 64, TV.y - 29, { tam: 14, cor: "#f7c948" });
+    spriteC(SPR.estrela, TV.x + TV.w + 8, TV.y + 12, 3);
+  }
+
+  // ---- setinha mostrando o sofá ----
+  if (f7.etapa === 2 && !f7.pertoSofa && Math.floor(jogo.t * 4) % 2 === 0) {
+    const sx = SOFA.x + SOFA.w / 2;
+    ctx.fillStyle = "#f7c948";
+    ctx.fillRect(sx - 4, 186, 8, 12);
+    ctx.fillRect(sx - 10, 198, 20, 6);
+    ctx.fillRect(sx - 6, 204, 12, 5);
+    ctx.fillRect(sx - 2, 209, 4, 4);
+  }
+  if (f7.etapa === 2 && f7.pertoSofa) {
+    painel(f7.tutiX - 52, PISO - 96, 104, 22, "#f7c948");
+    texto(txAcao() + " = DEITAR", f7.tutiX, PISO - 92, { tam: 11, cor: "#f7c948" });
+  }
+
+  // ---- a luz apagando ----
+  if (f7.luz > 0) {
+    ctx.fillStyle = "rgba(9,11,20," + (0.66 * f7.luz).toFixed(3) + ")";
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  if (f7.msgT > 0) {
+    ctx.font = 'bold 15px "Courier New", monospace';
+    const lt = ctx.measureText(f7.msg).width + 26;
+    painel(W / 2 - lt / 2, 62, lt, 28);
+    texto(f7.msg, W / 2, 68, { tam: 15, cor: "#f7c948" });
+  }
+
+  if (f7.luz >= 1 && Math.floor(jogo.t * 2) % 2 === 0) {
+    painel(W / 2 - 130, 326, 260, 26);
+    texto(txAcao() + " = FIM DA MISSÃO", W / 2, 331, { tam: 14, cor: "#f7c948" });
+  }
+
+  desenharHudSala();
+}
+
+const SALA_TITULOS = ["ESCOLHE O DESENHO!", "HORA DO DESENHO!", "BORA PRO SOFÁ!", "BOA NOITE!"];
+
+function desenharHudSala() {
+  painel(0, 0, W, HUD_H);
+  const dicas = [
+    "← → TROCA O CANAL, " + txAcao() + " ESCOLHE",
+    "APERTE " + txAcao() + " QUANDO FICAR ENGRAÇADO",
+    "← → ANDA, " + txAcao() + " DEITA NO SOFÁ",
+    "DURMA BEM, " + CONFIG.nomeMenino + "!",
+  ];
+  texto("FASE 7 — A NOITE NA SALA", 10, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  texto(SALA_TITULOS[f7.etapa], 10, 18, { tam: 15, align: "left", cor: "#f7c948" });
+  texto(dicas[f7.etapa], 470, 5, { tam: 10, align: "right", cor: "#c8c2ad" });
+
+  if (f7.etapa === 0) {
+    texto("CANAL " + (f7.canal + 1) + ": " + f7.canais[f7.canal].nome, 470, 20,
+      { tam: 11, align: "right", cor: f7.canais[f7.canal].desenho ? "#3fa34d" : "#ffffff" });
+  } else if (f7.etapa === 1) {
+    texto("SONO", 286, 22, { tam: 10, align: "left", cor: "#f3c39a" });
+    barra(330, 20, 136, 16, f7.sono / 100, "#7fc4ff");
+  } else if (f7.etapa >= 2) {
+    texto("RISADAS: " + f7.risos, 470, 20, { tam: 12, align: "right", cor: "#f2a3c7" });
+  }
+}
+
+/* ==========================================================================
    TELAS
    ========================================================================== */
 function fundoNoite() {
@@ -2696,11 +3240,11 @@ function desenharTitulo() {
   painel(300, 120, 172, 86);
   texto("COMO JOGAR", 386, 126, { tam: 12, cor: "#f7c948" });
   texto("SETAS = ANDAR", 386, 146, { tam: 11 });
-  texto("ESPAÇO = AÇÃO", 386, 162, { tam: 11 });
-  texto("P = PAUSA / M = SOM", 386, 178, { tam: 10, cor: "#c8c2ad" });
+  texto(txAcao() + " = AÇÃO", 386, 162, { tam: 11 });
+  texto(ehToque ? "II = PAUSA / ♪ = SOM" : "P = PAUSA / M = SOM", 386, 178, { tam: 10, cor: "#c8c2ad" });
 
   if (Math.floor(jogo.t * 2) % 2 === 0)
-    texto("APERTE ESPAÇO PRA COMEÇAR", W / 2, 338, { tam: 15, cor: "#f7c948" });
+    texto("APERTE " + txAcao() + " PRA COMEÇAR", W / 2, 338, { tam: 15, cor: "#f7c948" });
 }
 
 function desenharIntervalo() {
@@ -2736,7 +3280,7 @@ function desenharIntervalo() {
   }
 
   if (Math.floor(jogo.t * 2) % 2 === 0)
-    texto("AGORA OS DESAFIOS LÁ DENTRO! ESPAÇO", W / 2, 336, { tam: 13, cor: "#f7c948" });
+    texto("AGORA OS DESAFIOS LÁ DENTRO! " + txAcao(), W / 2, 336, { tam: 13, cor: "#f7c948" });
 }
 
 const confete = [];
@@ -2761,27 +3305,49 @@ function atualizarConfete(dt) {
   }
 }
 
+// a casa vista de lado, de noite, com a janela da sala acesa e o Tuti dormindo
+function desenharCasaDeLado(x, y, w, h) {
+  ctx.fillStyle = "#d9cfae"; ctx.fillRect(x, y + 20, w, h - 20);
+  ctx.fillStyle = "#a8402f"; ctx.fillRect(x - 12, y, w + 24, 22);
+  ctx.fillStyle = "#c9503a"; ctx.fillRect(x - 6, y + 20, w, 5);
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(x + 22, y + h - 56, 40, 56);       // porta
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(x + 54, y + h - 32, 4, 4);
+  // janela da sala: a luz da TV já apagou, só resta o abajur e o menino dormindo
+  const jx = x + w - 88, jy = y + 46;
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(jx - 4, jy - 4, 76, 60);
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(jx, jy, 68, 52);
+  ctx.fillStyle = "#6f4d80"; ctx.fillRect(jx + 8, jy + 24, 52, 20);          // sofá
+  ctx.fillStyle = "#3f6fd1"; ctx.fillRect(jx + 22, jy + 20, 34, 12);         // cobertor
+  ctx.fillStyle = "#f3c39a"; ctx.fillRect(jx + 12, jy + 18, 12, 12);         // cabecinha
+  ctx.fillStyle = "#7a4a24"; ctx.fillRect(jx + 12, jy + 14, 12, 5);
+  ctx.fillStyle = "#ffffff";
+  for (let i = 0; i < 3; i++) {
+    const p = (jogo.t * 0.5 + i / 3) % 1;
+    ctx.fillRect(jx + 26 + p * 14, jy + 14 - p * 12, 3 + i, 3 + i);
+  }
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(jx + 32, jy, 4, 52);
+}
+
 function desenharVitoria() {
   fundoNoite();
   const CHAO = 328;
-  desenharEscola(150, 182, 180, 118);                      // corpo termina em 300
-  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 300, W, H - 300);
-  ctx.fillStyle = "#9a9a88"; ctx.fillRect(0, 300, W, 4);
+  desenharCasaDeLado(130, 176, 220, 124);                  // corpo termina em 300
+  ctx.fillStyle = "#2c5f37"; ctx.fillRect(0, 296, W, H - 296);
+  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 302, W, H - 302);
   spriteC(SPR.nuna, 72, CHAO - 21, 2);
-  spriteC(SPR.tutiBaixo0, 108, CHAO - 17, 2);
   spriteC(SPR.carroLado, 406, CHAO - 12, 2);
   for (const c of confete) { ctx.fillStyle = c.cor; ctx.fillRect(c.x | 0, c.y | 0, 5, 5); }
 
   texto("MISSÃO", W / 2, 10, { tam: 36, cor: "#f7c948" });
   texto("CUMPRIDA!", W / 2, 46, { tam: 36, cor: "#f7c948" });
-  textoCoracao("APRENDIZAGEM, AMOR E FUTURO!", W / 2, 88, { tam: 13, cor: "#f2a3c7" });
+  textoCoracao("BOA NOITE, " + CONFIG.nomeMenino + "! ATÉ AMANHÃ!", W / 2, 88, { tam: 13, cor: "#f2a3c7" });
 
   painel(96, 110, 288, 48);
   texto("PONTUAÇÃO FINAL", W / 2, 115, { tam: 11, cor: "#c8c2ad" });
   texto(String(Math.floor(jogo.pontos)).padStart(6, "0"), W / 2, 130, { tam: 24, cor: "#f7c948" });
 
   if (Math.floor(jogo.t * 2) % 2 === 0)
-    texto("ESPAÇO = JOGAR DE NOVO", W / 2, 162, { tam: 14, cor: "#ffffff" });
+    texto(txAcao() + " = JOGAR DE NOVO", W / 2, 162, { tam: 14, cor: "#ffffff" });
 
   painel(56, 332, 368, 26, "#f2a3c7");
   textoCoracao("CONQUISTA: " + CONFIG.nomeTia + " DO ANO", W / 2 - 8, 337, { tam: 13, cor: "#f2a3c7" });
@@ -2804,7 +3370,7 @@ function desenharGameOver() {
   spriteC(SPR.tutiBaixo0, 262, CHAO - 25, 3);
 
   if (Math.floor(jogo.t * 2) % 2 === 0)
-    texto("APERTE ESPAÇO", W / 2, 330, { tam: 16, cor: "#f7c948" });
+    texto("APERTE " + txAcao(), W / 2, 330, { tam: 16, cor: "#f7c948" });
 }
 
 function desenharPausa() {
@@ -2827,7 +3393,7 @@ function quadro(agora) {
   if (dt > 0.05) dt = 0.05;   // evita "teleporte" se a aba travar
 
   // pausa / som
-  if (foiApertada("KeyP") && ["MANHA", "FASE1", "FASE2", "RECREIO", "QUINTAL"].indexOf(jogo.estado) >= 0)
+  if (foiApertada("KeyP") && ["MANHA", "FASE1", "FASE2", "RECREIO", "QUINTAL", "SALA"].indexOf(jogo.estado) >= 0)
     jogo.pausado = !jogo.pausado;
   if (foiApertada("KeyM")) { som.ligado = !som.ligado; if (som.ligado) SFX.coleta(); }
 
@@ -2856,6 +3422,9 @@ function quadro(agora) {
         break;
       case "QUINTAL":
         atualizarQuintal(dt);
+        break;
+      case "SALA":
+        atualizarSala(dt);
         break;
       case "TRANSICAO":
         if (jogo.t > 0.5 && foiApertada("Space")) trans.proxima();
@@ -2888,6 +3457,7 @@ function quadro(agora) {
     case "FASE2": desenharFase2(); break;
     case "RECREIO": desenharRecreio(); break;
     case "QUINTAL": desenharQuintal(); break;
+    case "SALA": desenharSala(); break;
     case "TRANSICAO": desenharTransicao(); break;
     case "VITORIA": desenharVitoria(); break;
     case "GAMEOVER": desenharGameOver(); break;
