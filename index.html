@@ -39,6 +39,7 @@
 const CONFIG = {
   nomeMenino: "TUTI",
   nomeTia: "TIA NUNA",
+  nomeIrmao: "THOMAS",
   nomeEscola: "ESCOLA PIRATINI",
 
   vidas: 3,
@@ -70,6 +71,26 @@ const CONFIG = {
   intervaloObstaculo: 1.15, // segundos entre obstáculos
   intervaloItem: 3.6,       // segundos entre estrelas/gasolina
   avisoAmigo: 430,          // distância de antecedência do aviso "amigo no ponto"
+
+  // ---- FASE 4: recreio, esconde-esconde ----
+  velRecreio: 132,
+  alcanceEspiar: 40,        // de que distância dá pra espiar um esconderijo
+  intervaloRisada: 3.5,     // de quanto em quanto tempo um amigo escondido dá risada
+
+  // ---- FASE 5: corrida de volta pra casa ----
+  qtdRivais: 3,
+  velRival: [198, 210, 222],
+  elastico: 34,             // o quanto os rivais aceleram se ficam pra trás (disputa junta)
+
+  // ---- FASE 6: pega-pega no quintal ----
+  velPegador: 134,
+  velThomas: 88,            // 3-4 anos, corre devagarinho: dá pra pegar correndo atrás
+  // a tia corre MAIS que o Tuti de propósito. Se corresse menos, bastaria
+  // encostar nela e a fase virava uma linha reta. A chance dele é quando ela
+  // para pra tomar fôlego — aí a fase vira "chega perto e espera o momento".
+  velNunaFuga: 148,
+  descansoNuna: 5.5,        // de quanto em quanto tempo ela para pra respirar
+  descansoDur: 1.6,
 
   // ---- FASE 2: desafios na escola ----
   velTuti: 118,
@@ -215,8 +236,8 @@ SPR.nuna = [
   "..hhhhhhhh..",
   ".hhhhhhhhhh.",
   ".hhsssssshh.",
-  ".hssssssssh.",
-  ".hsrrsrrssh.",
+  ".hrrrssrrrh.",   // aro de cima das duas lentes
+  ".hrkrrrrkrh.",   // lentes e ponte, com as pupilas pretas dentro
   ".hssssssssh.",
   ".hsssppsssh.",
   ".hhsssssshh.",
@@ -476,6 +497,120 @@ SPR.tenis = [
   "wwwwwwwwwwww",
 ];
 
+/* ---- Thomas, o irmão mais novo: menor que o Tuti e de cabeção ---- */
+SPR.thomasBaixo0 = [
+  "...HHHH...",
+  "..HHHHHH..",
+  ".HHHHHHHH.",
+  ".HssssssH.",
+  ".ssssssss.",
+  ".skssssks.",
+  "..sskkss..",
+  "...ssss...",
+  ".rrrrrrrr.",
+  "srrrrrrrrs",
+  "..AAAAAA..",
+  "..AA..AA..",
+  "..SS..SS..",
+];
+SPR.thomasBaixo1 = SPR.thomasBaixo0.slice(0, 11).concat([".AAA..AAA.", ".SS....SS."]);
+
+/* ---- esconderijos do recreio e obstáculos do quintal (vistos de cima) ---- */
+SPR.arvore = [
+  "...GGGGGG...",
+  ".GGggggggGG.",
+  "GGgggGgggggG",
+  "GgggggggggGG",
+  "GggGgggggggG",
+  "GgggggggGggG",
+  "GggggGggggGG",
+  "GgggggggggGG",
+  "GGgggGgggggG",
+  "GGgggggggGG.",
+  ".GGggggggGG.",
+  "...GGGGGG...",
+];
+
+SPR.arbusto = [
+  "...GGGGG....",
+  ".GGgggggGG..",
+  "GgggggggggG.",
+  "GggggGgggggG",
+  "GggggggggggG",
+  "GgggggGggggG",
+  "GggggggggggG",
+  ".GgggggggggG",
+  "..GGgggggGG.",
+  "...GGGGGG...",
+];
+
+SPR.banco = [   // banco de ripas de madeira, visto de cima
+  "ffffffffffff",
+  "eeeeeeeeeeee",
+  "eeeeeeeeeeee",
+  "ffffffffffff",
+  "eeeeeeeeeeee",
+  "eeeeeeeeeeee",
+  "ffffffffffff",
+  "eeeeeeeeeeee",
+  "eeeeeeeeeeee",
+  "ffffffffffff",
+];
+
+SPR.escorrega = [   // visto de cima: plataforma em cima, rampa descendo
+  "..cccccccc..",
+  "..c......c..",
+  "..c......c..",
+  "..cccccccc..",
+  "...cyyyyc...",
+  "...cyyyyc...",
+  "...cyyyyc...",
+  "...cyyyyc...",
+  "...cyyyyc...",
+  "...cyyyyc...",
+  "...cyyyyc...",
+  "...cccccc...",
+];
+
+SPR.caixaDagua = [
+  "..cccccc..",
+  ".cccccccc.",
+  "ccaaaaaacc",
+  "caaaaaaaac",
+  "caaaaaaaac",
+  "caaaaaaaac",
+  "caaaaaaaac",
+  "ccaaaaaacc",
+  ".cccccccc.",
+  "..cccccc..",
+];
+
+SPR.piscina = [
+  "...cccccc...",
+  ".ccllllllcc.",
+  ".cllllllllc.",
+  "cllllllllllc",
+  "cllllllllllc",
+  "cllllllllllc",
+  "cllllllllllc",
+  ".cllllllllc.",
+  ".ccllllllcc.",
+  "...cccccc...",
+];
+
+SPR.casinhaCao = [
+  "....ffff....",
+  "..ffeeeeff..",
+  ".feeeeeeeef.",
+  "feeeeeeeeeef",
+  "eeeekkkkeeee",
+  "eeekkkkkkeee",
+  "eeekkkkkkeee",
+  "eeekkkkkkeee",
+  "eeekkkkkkeee",
+  "ffffffffffff",
+];
+
 // carinha pequena, usada no contador de amigos do HUD
 SPR.carinha = [
   ".HHHHH.",
@@ -654,10 +789,54 @@ const jogo = {
   vidas: CONFIG.vidas,
   pausado: false,
   tremor: 0,
-  faseDoGameOver: 1,
+  // no game over o jogo volta pra fase em que ele estava, nunca pro começo.
+  // cada fase registra aqui como se reiniciar e o nome que aparece na tela.
+  reiniciarFase: null,
+  nomeFase: "",
 };
 
 function trocarEstado(novo) { jogo.estado = novo; jogo.t = 0; }
+
+// toda fase chama isto ao começar: guarda os pontos e como voltar aqui
+function abrirFase(nome, reinicio) {
+  jogo.pontosFase = jogo.pontos;
+  jogo.vidas = CONFIG.vidas;
+  jogo.nomeFase = nome;
+  jogo.reiniciarFase = reinicio;
+}
+
+/* --------------------------------------------------------------------------
+   TELA DE TRANSIÇÃO entre fases (genérica)
+   -------------------------------------------------------------------------- */
+const trans = {};
+function mostrarTransicao(titulo, l1, l2, proxima) {
+  trans.titulo = titulo;
+  trans.l1 = l1;
+  trans.l2 = l2;
+  trans.proxima = proxima;
+  SFX.fase();
+  trocarEstado("TRANSICAO");
+}
+
+function desenharTransicao() {
+  fundoNoite();
+  const CHAO = 320;
+  ctx.fillStyle = "#2c5f37"; ctx.fillRect(0, 288, W, H - 288);
+  ctx.fillStyle = "#8b8b7a"; ctx.fillRect(0, 296, W, H - 296);
+  spriteC(SPR.nuna, 196, CHAO - 21, 2);
+  spriteC(SPR.tutiBaixo0, 234, CHAO - 17, 2);
+  spriteC(SPR.carroLado, 380, CHAO - 12, 2);
+
+  texto(trans.titulo, W / 2, 60, { tam: 26, cor: "#f7c948" });
+  painel(50, 110, 380, 62, "#f2a3c7");
+  texto(trans.l1, W / 2, 120, { tam: 14, cor: "#ffffff" });
+  texto(trans.l2, W / 2, 142, { tam: 14, cor: "#f2a3c7" });
+  painel(140, 196, 200, 28);
+  texto("PONTOS: " + Math.floor(jogo.pontos), W / 2, 202, { tam: 15, cor: "#f7c948" });
+
+  if (Math.floor(jogo.t * 2) % 2 === 0)
+    texto("APERTE ESPAÇO", W / 2, 336, { tam: 15, cor: "#f7c948" });
+}
 
 function tremer(f) { jogo.tremor = Math.max(jogo.tremor, f || 0.35); }
 
@@ -666,7 +845,6 @@ function perderVida() {
   SFX.dano();
   tremer(0.4);
   if (jogo.vidas <= 0) {
-    jogo.faseDoGameOver = jogo.estado === "FASE1" ? 1 : 2;
     SFX.fim();
     trocarEstado("GAMEOVER");
     return true;
@@ -1151,6 +1329,35 @@ const TRECHOS = [
   },
 ];
 
+// a volta pra casa faz o caminho inverso, no fim de tarde
+const TRECHOS_VOLTA = [
+  {
+    nome: "SAINDO DA ESCOLA", aviso: "VALENDO! ULTRAPASSA ELES!",
+    grama: "#4a6b3f", asfalto: "#4a4438", faixa: "#f0e6c0",
+    deco: "arvore", ritmo: 1.15,
+    pesos: [["cone", 0.45], ["poca", 0.30], ["carro", 0.25]],
+  },
+  {
+    nome: "AVENIDA", aviso: "AVENIDA CHEIA! CUIDADO!",
+    grama: "#6b5a48", asfalto: "#453b30", faixa: "#f0e6c0",
+    deco: "predio", ritmo: 0.9,
+    pesos: [["cone", 0.20], ["poca", 0.15], ["carro", 0.65]],
+  },
+  {
+    nome: "CHEGANDO EM CASA", aviso: "TÁ QUASE! ACELERA!",
+    grama: "#4a5240", asfalto: "#37333f", faixa: "#d9cfae",
+    deco: "casa", ritmo: 1.0,
+    pesos: [["cone", 0.40], ["poca", 0.25], ["carro", 0.35]],
+  },
+];
+
+// cores dos carros que disputam a corrida de volta
+const RIVAIS_COR = [
+  { d: "#c9503a", c: "#f0b8a8" },
+  { d: "#3fa34d", c: "#a8e0b0" },
+  { d: "#7a5ac9", c: "#c8b8f0" },
+];
+
 // os coleguinhas do Tuti — mesmo desenho dele, com outras cores
 const AMIGOS = [
   { nome: "JOÃO", cor: { g: "#f7c948", G: "#c08f14", H: "#12131a", A: "#2b2f3d" } },
@@ -1160,13 +1367,27 @@ const AMIGOS = [
 
 const f1 = {};
 
+// a ida e a volta usam o mesmo motor de corrida, só trocando o cenário
+function trechosDaFase() { return f1.volta ? TRECHOS_VOLTA : TRECHOS; }
+
 function trechoDe(dist) {
-  return Math.min(TRECHOS.length - 1, Math.floor(dist / (CONFIG.distTotal / TRECHOS.length)));
+  const t = trechosDaFase();
+  return Math.min(t.length - 1, Math.floor(dist / (CONFIG.distTotal / t.length)));
 }
 
-function iniciarFase1() {
-  jogo.pontosFase = jogo.pontos;
-  jogo.vidas = CONFIG.vidas;
+// em que lugar da corrida o jogador está (só faz sentido na volta)
+function posicaoNaCorrida() {
+  if (!f1.rivais) return 1;
+  return 1 + f1.rivais.filter((r) => r.dist > f1.dist).length;
+}
+function ordinal(n) { return n + "º"; }
+
+function iniciarFase1(volta) {
+  f1.volta = !!volta;
+  abrirFase(
+    f1.volta ? "FASE 5 — A CORRIDA DE VOLTA PRA CASA" : "FASE 2 — A CORRIDA PRA ESCOLA",
+    function () { iniciarFase1(f1.volta); }
+  );
   f1.carroX = 240;
   f1.carroY = 280;
   f1.vel = CONFIG.velBase;
@@ -1185,18 +1406,37 @@ function iniciarFase1() {
   f1.avisoT = 0;
   f1.trecho = 0;
 
-  // um coleguinha por trecho, esperando no ponto de ônibus na beirada da pista
-  const pedaco = CONFIG.distTotal / CONFIG.amigos;
+  // na IDA tem coleguinha pra pegar no ponto de ônibus; na VOLTA eles já estão no carro
   f1.amigos = [];
-  for (let i = 0; i < CONFIG.amigos; i++) {
-    f1.amigos.push({
-      idx: i,
-      distAlvo: (i + 0.55) * pedaco,
-      x: i % 2 === 0 ? FAIXAS[0] : FAIXAS[3],
-      y: -120,
-      nascido: false, pego: false, perdido: false, avisado: false,
-    });
+  if (!f1.volta) {
+    const pedaco = CONFIG.distTotal / CONFIG.amigos;
+    for (let i = 0; i < CONFIG.amigos; i++) {
+      f1.amigos.push({
+        idx: i,
+        distAlvo: (i + 0.55) * pedaco,
+        x: i % 2 === 0 ? FAIXAS[0] : FAIXAS[3],
+        y: -120,
+        nascido: false, pego: false, perdido: false, avisado: false,
+      });
+    }
   }
+
+  // na VOLTA é disputa: três carros correndo junto até em casa
+  f1.rivais = [];
+  if (f1.volta) {
+    for (let i = 0; i < CONFIG.qtdRivais; i++) {
+      f1.rivais.push({
+        idx: i,
+        dist: 60 + i * 40,
+        x: SLOTS[i === 0 ? 0 : i === 1 ? 2 : 4],
+        alvoX: 0,
+        vel: CONFIG.velRival[i],
+        tFaixa: 1.5 + i,
+      });
+      f1.rivais[i].alvoX = f1.rivais[i].x;
+    }
+  }
+  f1.melhorPos = CONFIG.qtdRivais + 1;
   trocarEstado("FASE1");
 }
 
@@ -1216,7 +1456,7 @@ function sortearTipo(pesos) {
 }
 
 function nascerObstaculo() {
-  const t = TRECHOS[f1.trecho];
+  const t = trechosDaFase()[f1.trecho];
   const ocupadas = faixasOcupadas();
   // nunca nasce em cima de um coleguinha (nem no slot vizinho, senão fica impossível pegar)
   let livres = SLOTS.filter((x) => !ocupadas.some((o) => Math.abs(o - x) < 61));
@@ -1261,9 +1501,20 @@ function atualizarFase1(dt) {
     for (const o of f1.obstaculos) o.y += 200 * dt;
     f1.obstaculos = f1.obstaculos.filter((o) => o.y < H + 60);
     if (f1.chegouT > 3.4) {
-      jogo.pontos += 500 + amigosPegos() * 200;
-      SFX.fase();
-      trocarEstado("INTERVALO");
+      if (f1.volta) {
+        const pos = f1.posFinal;
+        jogo.pontos += 500 + [900, 500, 250, 100][pos - 1];
+        mostrarTransicao(
+          "CHEGAMOS EM CASA!",
+          "VOCÊ TERMINOU EM " + ordinal(pos) + " LUGAR!",
+          "AGORA UM PEGA-PEGA NO QUINTAL!",
+          iniciarQuintal
+        );
+      } else {
+        jogo.pontos += 500 + amigosPegos() * 200;
+        SFX.fase();
+        trocarEstado("INTERVALO");
+      }
     }
     return;
   }
@@ -1302,8 +1553,36 @@ function atualizarFase1(dt) {
   const novoTrecho = trechoDe(f1.dist);
   if (novoTrecho !== f1.trecho) {
     f1.trecho = novoTrecho;
-    avisoF1(TRECHOS[novoTrecho].aviso, 2.8);
+    avisoF1(trechosDaFase()[novoTrecho].aviso, 2.8);
     SFX.fase();
+  }
+
+  // ------- carros rivais (só na volta) -------
+  for (const r of f1.rivais) {
+    // elástico: quem fica muito pra trás acelera um pouco, pra disputa não morrer
+    const atras = f1.dist - r.dist;
+    const ajuste = Math.max(-CONFIG.elastico, Math.min(CONFIG.elastico, atras * 0.05));
+    r.dist += (r.vel + ajuste) * dt;
+
+    // de vez em quando trocam de faixa, pra pista não ficar parada
+    r.tFaixa -= dt;
+    if (r.tFaixa <= 0) {
+      r.alvoX = SLOTS[Math.floor(Math.random() * SLOTS.length)];
+      r.tFaixa = 2.2 + Math.random() * 2.5;
+    }
+    r.x += Math.sign(r.alvoX - r.x) * Math.min(Math.abs(r.alvoX - r.x), 70 * dt);
+
+    // bater num rival custa uma vida, igual aos outros carros
+    r.y = f1.carroY - (r.dist - f1.dist);
+    if (f1.invenc <= 0 && bateu(f1.carroX, f1.carroY, 22, 30, r.x, r.y, 26, 34)) {
+      f1.invenc = CONFIG.invencivel;
+      avisoF1("ENCOSTOU NO OUTRO CARRO!");
+      if (perderVida()) return;
+    }
+  }
+  if (f1.volta) {
+    const pos = posicaoNaCorrida();
+    if (pos < f1.melhorPos) { f1.melhorPos = pos; if (pos === 1) avisoF1("TÁ EM PRIMEIRO!", 1.8); }
   }
 
   // ------- coleguinhas no ponto de ônibus -------
@@ -1380,7 +1659,27 @@ function atualizarFase1(dt) {
   }
   f1.coletaveis = f1.coletaveis.filter((c) => !c.pego && c.y < H + 40);
 
-  if (f1.dist >= CONFIG.distTotal) { f1.chegou = true; f1.chegouT = 0; }
+  if (f1.dist >= CONFIG.distTotal) {
+    f1.chegou = true;
+    f1.chegouT = 0;
+    f1.posFinal = posicaoNaCorrida();   // congela o lugar no momento da chegada
+  }
+}
+
+// a casa do Tuti, vista de cima como a escola, usada na chegada da volta
+function desenharCasaDeCima(x, y, w, h) {
+  ctx.fillStyle = "#d9cfae"; ctx.fillRect(x, y + 24, w, h - 24);
+  ctx.fillStyle = "#c0b492"; ctx.fillRect(x, y + h - 12, w, 12);
+  ctx.fillStyle = "#a8402f"; ctx.fillRect(x - 10, y + 10, w + 20, 16);
+  ctx.fillStyle = "#c9503a"; ctx.fillRect(x - 6, y, w + 12, 12);
+  ctx.fillStyle = "#2b3d63"; ctx.fillRect(x + w / 2 - 56, y + 32, 112, 18);
+  texto("CASA DOCE CASA", x + w / 2, y + 36, { tam: 10, cor: "#f7c948" });
+  for (const jx of [x + 16, x + w - 46]) {
+    ctx.fillStyle = "#2b3d63"; ctx.fillRect(jx, y + 60, 30, 26);
+    ctx.fillStyle = "#f7c948"; ctx.fillRect(jx + 3, y + 63, 24, 20);
+  }
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(x + w / 2 - 22, y + 62, 44, h - 62);
+  ctx.fillStyle = "#f7c948"; ctx.fillRect(x + w / 2 + 12, y + 84, 5, 5);
 }
 
 function desenharEscola(x, y, w, h) {
@@ -1441,7 +1740,7 @@ function desenharPonto(x, y) {
 }
 
 function desenharFase1() {
-  const tr = TRECHOS[f1.trecho];
+  const tr = trechosDaFase()[f1.trecho];
 
   // tudo do mundo fica preso abaixo do HUD (senão obstáculos aparecem por trás dele)
   ctx.save();
@@ -1473,11 +1772,18 @@ function desenharFase1() {
     desenharDeco(tr.deco, 444, y);
   }
 
-  // escola chegando
+  // o destino chegando: a escola na ida, a casa na volta
   if (f1.chegou) {
     const p = Math.min(1, f1.chegouT / 1.7);
     const ey = -250 + p * 300;
-    desenharEscola(70, ey, 340, 190);
+    if (f1.volta) desenharCasaDeCima(110, ey + 20, 260, 170);
+    else desenharEscola(70, ey, 340, 190);
+  }
+
+  // carros rivais da corrida de volta
+  for (const r of f1.rivais) {
+    if (r.y < -70 || r.y > H + 70) continue;
+    spriteC(SPR.carro, r.x, r.y, 2, RIVAIS_COR[r.idx]);
   }
 
   // coleguinhas esperando no ponto
@@ -1547,7 +1853,7 @@ function desenharFase1() {
       spriteC(SPR.tutiBaixo0, f1.carroX + 34 + n * 26, f1.carroY + 6, 2, AMIGOS[a.idx].cor);
       n++;
     }
-    texto("CHEGAMOS NA ESCOLA!", W / 2, 250, { tam: 20, cor: "#f7c948" });
+    texto(f1.volta ? "CHEGAMOS EM CASA!" : "CHEGAMOS NA ESCOLA!", W / 2, 250, { tam: 20, cor: "#f7c948" });
   } else if (f1.turboCd <= 0) {
     texto("ESPAÇO = TURBO!", W / 2, H - 26, { tam: 12, cor: "#f7c948" });
   }
@@ -1571,12 +1877,19 @@ function desenharHudFase1() {
   const frac = f1.combustivel / CONFIG.combustivelMax;
   barra(82, 19, 116, 16, frac, frac < 0.25 ? "#d9463c" : "#3fa34d");
 
-  texto(TRECHOS[f1.trecho].nome, 210, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  texto(trechosDaFase()[f1.trecho].nome, 210, 5, { tam: 10, align: "left", cor: "#f3c39a" });
   barra(210, 19, 110, 16, f1.dist / CONFIG.distTotal, "#f7c948");
 
-  texto("AMIGOS", 332, 5, { tam: 10, align: "left", cor: "#f3c39a" });
-  for (let i = 0; i < f1.amigos.length; i++) {
-    sprite(SPR.carinha, 332 + i * 17, 20, 2, f1.amigos[i].pego ? AMIGOS[i].cor : CINZA);
+  if (f1.volta) {
+    // na volta o que importa é o lugar na corrida, não os amigos
+    const pos = f1.chegou ? f1.posFinal : posicaoNaCorrida();
+    texto("LUGAR", 332, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+    texto(ordinal(pos), 332, 17, { tam: 20, align: "left", cor: pos === 1 ? "#f7c948" : "#ffffff" });
+  } else {
+    texto("AMIGOS", 332, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+    for (let i = 0; i < f1.amigos.length; i++) {
+      sprite(SPR.carinha, 332 + i * 17, 20, 2, f1.amigos[i].pego ? AMIGOS[i].cor : CINZA);
+    }
   }
 
   texto("PONTOS", 470, 4, { tam: 10, align: "right", cor: "#f3c39a" });
@@ -1630,8 +1943,7 @@ const ITENS = [
 const f2 = {};
 
 function iniciarFase2() {
-  jogo.pontosFase = jogo.pontos;
-  jogo.vidas = CONFIG.vidas;
+  abrirFase("FASE 3 — DESAFIOS NA ESCOLA", iniciarFase2);
   f2.x = cx(POS.inicio.c);
   f2.y = cy(POS.inicio.r);
   f2.dir = "baixo";
@@ -1781,9 +2093,12 @@ function atualizarFase2(dt) {
   if (dp) {
     if (ITENS.every((it) => f2.pegos[it.chave])) {
       jogo.pontos += 1000 + jogo.vidas * 300;
-      SFX.vitoria();
-      trocarEstado("VITORIA");
-      criarConfete();
+      mostrarTransicao(
+        "CHEGOU NA SALA!",
+        "AULA DADA, BARRIGA CHEIA...",
+        "AGORA É HORA DO RECREIO!",
+        iniciarRecreio
+      );
     } else if (f2.msgT <= 0) {
       msgF2("FALTA PEGAR OS ITENS!", 2);
       SFX.porta();
@@ -1892,6 +2207,454 @@ function desenharHudFase2() {
 
   texto("PONTOS", 470, 4, { tam: 10, align: "right", cor: "#f3c39a" });
   texto(String(Math.floor(jogo.pontos)).padStart(6, "0"), 470, 17, { tam: 18, align: "right", cor: "#f7c948" });
+}
+
+/* ==========================================================================
+   FASE 4 — RECREIO: ESCONDE-ESCONDE NO PÁTIO
+   O Tuti procura os três coleguinhas. Anda solto pelo pátio e aperta espaço
+   perto de um esconderijo pra espiar. O HUD dá a dica de "tá quente/tá frio".
+   ========================================================================== */
+// Move um personagem tentando contornar o que estiver na frente. Sem isso, quem
+// empurra reto contra a piscina ou uma árvore simplesmente trava, e uma criança
+// fica presa sem entender por quê.
+function andarContornando(px, py, d, v, livre) {
+  if (livre(px + d.dx * v, py + d.dy * v)) return { x: px + d.dx * v, y: py + d.dy * v, andou: true };
+  const perp = d.dx ? [{ x: 0, y: -1 }, { x: 0, y: 1 }] : [{ x: -1, y: 0 }, { x: 1, y: 0 }];
+  // Procura de que lado dá pra escapar, olhando até 30px — a largura de uma
+  // piscina ou de uma árvore. Olhar só um passo à frente não bastava: o desvio
+  // ainda caía dentro do mesmo obstáculo e o personagem travava.
+  for (let alcance = 6; alcance <= 30; alcance += 6) {
+    for (const p of perp) {
+      if (!livre(px + p.x * alcance, py + p.y * alcance)) continue;
+      if (!livre(px + p.x * alcance + d.dx * v, py + p.y * alcance + d.dy * v)) continue;
+      const mx = px + p.x * v, my = py + p.y * v;
+      if (livre(mx, my)) return { x: mx, y: my, andou: true };
+    }
+  }
+  return { x: px, y: py, andou: false };
+}
+
+const PATIO_Y = 46;                       // topo da área de brincar
+// escalas maiores: uma árvore vista de cima tem que ser bem maior que a criança
+const ESCONDERIJOS = [
+  { spr: "arvore", x: 72, y: 132, esc: 5 },
+  { spr: "arbusto", x: 200, y: 108, esc: 4 },
+  { spr: "escorrega", x: 402, y: 132, esc: 4 },
+  { spr: "banco", x: 94, y: 294, esc: 4 },
+  { spr: "caixaDagua", x: 248, y: 308, esc: 4 },
+  { spr: "arvore", x: 416, y: 288, esc: 5 },
+];
+
+const PISTAS = [
+  { d: 999, txt: "TÁ GELADO...", cor: "#7fc4ff" },
+  { d: 210, txt: "TÁ FRIO", cor: "#7fc4ff" },
+  { d: 150, txt: "TÁ MORNO", cor: "#f7c948" },
+  { d: 95, txt: "TÁ QUENTE!", cor: "#e8853a" },
+  { d: 55, txt: "PEGANDO FOGO!", cor: "#d9463c" },
+];
+
+const f4 = {};
+
+function iniciarRecreio() {
+  abrirFase("FASE 4 — RECREIO NA ESCOLA", iniciarRecreio);
+  f4.x = 240;
+  f4.y = 190;
+  f4.dir = "baixo";
+  f4.anim = 0;
+  f4.andando = false;
+  f4.msg = "";
+  f4.msgT = 0;
+  f4.tRisada = CONFIG.intervaloRisada;
+  f4.risada = null;
+  f4.risadaT = 0;
+  f4.tempo = 0;
+
+  // sorteia em quais esconderijos os três amigos vão se meter
+  const indices = ESCONDERIJOS.map((_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
+  }
+  f4.locais = ESCONDERIJOS.map(function (e, i) {
+    return { ref: e, i: i, amigo: -1, espiado: false };
+  });
+  for (let a = 0; a < AMIGOS.length; a++) f4.locais[indices[a]].amigo = a;
+  f4.achados = 0;
+  trocarEstado("RECREIO");
+}
+
+function msgF4(txt, dur) { f4.msg = txt; f4.msgT = dur || 1.8; }
+
+// esconderijos são sólidos: o Tuti não passa por dentro
+function livreNoPatio(px, py) {
+  if (px < 26 || px > W - 26 || py < PATIO_Y + 26 || py > H - 20) return false;
+  for (const l of f4.locais) {
+    const e = l.ref;
+    const lw = larg(SPR[e.spr]) * e.esc / 2, lh = SPR[e.spr].length * e.esc / 2;
+    if (Math.abs(px - e.x) < lw - 2 && Math.abs(py - e.y) < lh - 2) return false;
+  }
+  return true;
+}
+
+function distAte(l) { return Math.hypot(f4.x - l.ref.x, f4.y - l.ref.y); }
+
+// o esconderijo não espiado mais perto, e a distância até ele
+function pistaAtual() {
+  let melhor = null, dist = Infinity;
+  for (const l of f4.locais) {
+    if (l.espiado || l.amigo < 0) continue;
+    const d = distAte(l);
+    if (d < dist) { dist = d; melhor = l; }
+  }
+  return { local: melhor, dist: dist };
+}
+
+function atualizarRecreio(dt) {
+  f4.tempo += dt;
+  if (f4.msgT > 0) f4.msgT -= dt;
+  if (f4.risadaT > 0) f4.risadaT -= dt; else f4.risada = null;
+
+  // ------- andar -------
+  let d = null;
+  for (let i = ordemSetas.length - 1; i >= 0; i--) {
+    if (teclas[ordemSetas[i]]) { d = DIRS[ordemSetas[i]]; break; }
+  }
+  f4.andando = false;
+  if (d) {
+    f4.dir = d.nome;
+    const r = andarContornando(f4.x, f4.y, d, CONFIG.velRecreio * dt, livreNoPatio);
+    f4.x = r.x; f4.y = r.y; f4.andando = r.andou;
+  }
+  f4.anim = f4.andando ? f4.anim + dt * 8 : 0;
+
+  // ------- espiar -------
+  if (foiApertada("Space")) {
+    let alvo = null, dist = Infinity;
+    for (const l of f4.locais) {
+      const dd = distAte(l);
+      if (dd < dist) { dist = dd; alvo = l; }
+    }
+    if (!alvo || dist > CONFIG.alcanceEspiar) {
+      msgF4("CHEGA MAIS PERTO DE UM ESCONDERIJO!");
+    } else if (alvo.espiado) {
+      msgF4("JÁ OLHEI AQUI!");
+    } else {
+      alvo.espiado = true;
+      if (alvo.amigo >= 0) {
+        f4.achados++;
+        jogo.pontos += 250;
+        SFX.item();
+        msgF4("ACHOU O " + AMIGOS[alvo.amigo].nome + "!", 2.2);
+        if (f4.achados === AMIGOS.length) {
+          jogo.pontos += 400;
+          mostrarTransicao(
+            "ACHOU TODO MUNDO!",
+            "O RECREIO ACABOU E A AULA TAMBÉM!",
+            "A " + CONFIG.nomeTia + " JÁ TÁ NO PORTÃO PRA BUSCAR!",
+            function () { iniciarFase1(true); }
+          );
+          return;
+        }
+      } else {
+        SFX.porta();
+        msgF4("NINGUÉM AQUI!");
+      }
+    }
+  }
+
+  // ------- risadinha de quem está escondido -------
+  f4.tRisada -= dt;
+  if (f4.tRisada <= 0) {
+    const p = pistaAtual();
+    f4.tRisada = CONFIG.intervaloRisada;
+    if (p.local) {
+      f4.risada = p.local;
+      f4.risadaT = 1.1;
+      SFX.coleta();
+    }
+  }
+}
+
+function desenharRecreio() {
+  // pátio: grama com um pedaço de quadra cimentada
+  ctx.fillStyle = "#3d7a49"; ctx.fillRect(0, PATIO_Y, W, H - PATIO_Y);
+  ctx.fillStyle = "#357040";
+  for (let y = PATIO_Y; y < H; y += 26) ctx.fillRect(0, y, W, 3);
+  ctx.fillStyle = "#a9a897"; ctx.fillRect(150, 150, 200, 130);
+  ctx.strokeStyle = "#e8e8e8"; ctx.lineWidth = 2;
+  ctx.strokeRect(160, 160, 180, 110);
+  ctx.beginPath(); ctx.arc(250, 215, 26, 0, Math.PI * 2); ctx.stroke();
+
+  // muro da escola no fundo
+  ctx.fillStyle = "#c0b492"; ctx.fillRect(0, PATIO_Y, W, 22);
+  ctx.fillStyle = "#a8402f"; ctx.fillRect(0, PATIO_Y, W, 6);
+
+  // esconderijos (os já espiados ganham um X)
+  for (const l of f4.locais) {
+    const e = l.ref;
+    spriteC(SPR[e.spr], e.x, e.y, e.esc);
+    if (l.espiado) {
+      ctx.strokeStyle = l.amigo >= 0 ? "#3fa34d" : "#d9463c";
+      ctx.lineWidth = 3;
+      const r = 12;
+      ctx.beginPath();
+      ctx.moveTo(e.x - r, e.y - r); ctx.lineTo(e.x + r, e.y + r);
+      ctx.moveTo(e.x + r, e.y - r); ctx.lineTo(e.x - r, e.y + r);
+      ctx.stroke();
+    }
+    // amigo já achado fica visível, comemorando ao lado do esconderijo
+    if (l.espiado && l.amigo >= 0) {
+      spriteC(SPR.tutiBaixo0, e.x + 26, e.y + 10, 2, AMIGOS[l.amigo].cor);
+    }
+    // risadinha de quem ainda está escondido
+    if (f4.risada === l && f4.risadaT > 0) {
+      painel(e.x - 26, e.y - 44, 52, 20, "#f7c948");
+      texto("HIHI!", e.x, e.y - 40, { tam: 11, cor: "#f7c948" });
+    }
+  }
+
+  // o Tuti
+  const q = Math.floor(f4.anim) % 2;
+  let spr, esp = false;
+  if (f4.dir === "cima") spr = q ? SPR.tutiCima1 : SPR.tutiCima0;
+  else if (f4.dir === "baixo") spr = q ? SPR.tutiBaixo1 : SPR.tutiBaixo0;
+  else { spr = q ? SPR.tutiLado1 : SPR.tutiLado0; esp = f4.dir === "esq"; }
+  spriteC(spr, f4.x, f4.y, 2, null, esp);
+
+  // dica de "espia aqui" quando está perto de um esconderijo ainda não olhado
+  let perto = null, dp = Infinity;
+  for (const l of f4.locais) { const dd = distAte(l); if (dd < dp) { dp = dd; perto = l; } }
+  if (perto && dp <= CONFIG.alcanceEspiar && !perto.espiado) {
+    painel(f4.x - 46, f4.y - 46, 92, 22, "#f7c948");
+    texto("ESPAÇO!", f4.x, f4.y - 42, { tam: 12, cor: "#f7c948" });
+  }
+
+  if (f4.msgT > 0) {
+    ctx.font = 'bold 14px "Courier New", monospace';
+    const lt = ctx.measureText(f4.msg).width + 24;
+    painel(W / 2 - lt / 2, 300, lt, 26);
+    texto(f4.msg, W / 2, 305, { tam: 14, cor: "#f7c948" });
+  }
+
+  desenharHudRecreio();
+}
+
+function desenharHudRecreio() {
+  painel(0, 0, W, HUD_H);
+  texto("ESCONDE-ESCONDE", 10, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  texto("ACHOU " + f4.achados + "/" + AMIGOS.length, 10, 18, { tam: 17, align: "left", cor: "#f7c948" });
+
+  // termômetro: o quão perto ele está do amigo escondido mais próximo
+  const p = pistaAtual();
+  let pista = PISTAS[0];
+  for (const q of PISTAS) if (p.dist <= q.d) pista = q;
+  texto("TÁ PERTO?", 196, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  texto(pista.txt, 196, 18, { tam: 16, align: "left", cor: pista.cor });
+
+  for (let i = 0; i < AMIGOS.length; i++) {
+    const achado = f4.locais.some((l) => l.espiado && l.amigo === i);
+    sprite(SPR.carinha, 400 + i * 22, 16, 2, achado ? AMIGOS[i].cor : CINZA);
+  }
+}
+
+/* ==========================================================================
+   FASE 6 — PEGA-PEGA NO QUINTAL DE CASA
+   Agora o Tuti é o pegador: precisa encostar no Thomas e na Tia Nuna.
+   ========================================================================== */
+const QUINTAL_Y = 46;
+const MOVEIS = [
+  { spr: "arvore", x: 76, y: 166, esc: 5 },
+  { spr: "casinhaCao", x: 404, y: 150, esc: 4 },
+  { spr: "piscina", x: 250, y: 234, esc: 5 },
+  { spr: "arbusto", x: 70, y: 300, esc: 4 },
+  { spr: "arvore", x: 410, y: 294, esc: 5 },
+];
+
+const f6 = {};
+
+function iniciarQuintal() {
+  abrirFase("FASE 6 — PEGA-PEGA NO QUINTAL", iniciarQuintal);
+  f6.x = 240;
+  f6.y = 300;
+  f6.dir = "cima";
+  f6.anim = 0;
+  f6.andando = false;
+  f6.tempo = 0;
+  f6.msg = "";
+  f6.msgT = 0;
+  // um empurrãozinho aleatório na posição inicial pra cada partida sair diferente
+  const sorte = () => (Math.random() - 0.5) * 70;
+  f6.fugitivos = [
+    {
+      nome: CONFIG.nomeIrmao, spr: "thomas", vel: CONFIG.velThomas,
+      x: 150 + sorte(), y: 130 + sorte(), pego: false, descanso: 0, tDescanso: 99, anim: 0, dir: 1,
+    },
+    {
+      nome: CONFIG.nomeTia, spr: "nuna", vel: CONFIG.velNunaFuga,
+      x: 350 + sorte(), y: 250 + sorte(), pego: false,
+      descanso: 0, tDescanso: CONFIG.descansoNuna + Math.random() * 2, anim: 0, dir: -1,
+      // a tia é esperta: foge dando voltas em vez de correr reto pro canto
+      esperto: true, giro: 1, tGiro: 2.5,
+    },
+  ];
+  trocarEstado("QUINTAL");
+}
+
+function msgF6(txt, dur) { f6.msg = txt; f6.msgT = dur || 1.8; }
+
+function livreNoQuintal(px, py) {
+  if (px < 26 || px > W - 26 || py < QUINTAL_Y + 26 || py > H - 20) return false;
+  for (const m of MOVEIS) {
+    const lw = larg(SPR[m.spr]) * m.esc / 2, lh = SPR[m.spr].length * m.esc / 2;
+    if (Math.abs(px - m.x) < lw - 4 && Math.abs(py - m.y) < lh - 4) return false;
+  }
+  return true;
+}
+
+function atualizarQuintal(dt) {
+  f6.tempo += dt;
+  if (f6.msgT > 0) f6.msgT -= dt;
+
+  // ------- o Tuti corre atrás -------
+  let d = null;
+  for (let i = ordemSetas.length - 1; i >= 0; i--) {
+    if (teclas[ordemSetas[i]]) { d = DIRS[ordemSetas[i]]; break; }
+  }
+  f6.andando = false;
+  if (d) {
+    f6.dir = d.nome;
+    const r = andarContornando(f6.x, f6.y, d, CONFIG.velPegador * dt, livreNoQuintal);
+    f6.x = r.x; f6.y = r.y; f6.andando = r.andou;
+  }
+  f6.anim = f6.andando ? f6.anim + dt * 8 : 0;
+
+  // ------- quem foge -------
+  for (const g of f6.fugitivos) {
+    if (g.pego) continue;
+
+    // a tia para de vez em quando pra tomar fôlego, senão nunca seria pega
+    g.tDescanso -= dt;
+    if (g.tDescanso <= 0) {
+      g.descanso = CONFIG.descansoDur;
+      g.tDescanso = CONFIG.descansoNuna + 2;
+      if (g.esperto) msgF6("A " + CONFIG.nomeTia + " PAROU! CORRE!", CONFIG.descansoDur);
+    }
+    if (g.descanso > 0) { g.descanso -= dt; g.anim = 0; }
+    else {
+      // Escolhe entre 16 direções a que deixa ele mais longe do Tuti sem se
+      // encurralar. Somar "vetor de fuga + empurrão da borda" não funciona: ou a
+      // fuga vence e ele raspa na parede até ser pego, ou a borda vence e ele
+      // corre direto pros braços do Tuti. Testar as direções resolve as duas.
+      const v = g.vel * dt;
+      const olhada = v * 8;                      // o quanto ele "enxerga" à frente
+      let melhorX = 0, melhorY = 0, melhorNota = -Infinity;
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * Math.PI * 2;
+        const dx = Math.cos(ang), dy = Math.sin(ang);
+        const nx = g.x + dx * olhada, ny = g.y + dy * olhada;
+        if (!livreNoQuintal(nx, ny)) continue;
+        let nota = Math.hypot(nx - f6.x, ny - f6.y);
+        // não vale se enfiar num canto, mesmo que momentaneamente fique longe
+        const folga = Math.min(nx - 26, W - 26 - nx, ny - (QUINTAL_Y + 26), H - 20 - ny);
+        nota += Math.min(folga, 100) * 0.9;
+        // leve preferência por manter o rumo, pra não ficar tremendo no lugar
+        if (g.ulDx != null) nota += (dx * g.ulDx + dy * g.ulDy) * 12;
+        if (nota > melhorNota) { melhorNota = nota; melhorX = dx; melhorY = dy; }
+      }
+      g.ulDx = melhorX; g.ulDy = melhorY;
+      if (livreNoQuintal(g.x + melhorX * v, g.y)) g.x += melhorX * v;
+      if (livreNoQuintal(g.x, g.y + melhorY * v)) g.y += melhorY * v;
+      if (melhorX !== 0) g.dir = melhorX < 0 ? -1 : 1;
+      g.anim += dt * 9;
+    }
+
+    // pegou?
+    if (Math.hypot(g.x - f6.x, g.y - f6.y) < 24) {
+      g.pego = true;
+      jogo.pontos += 400;
+      SFX.item();
+      msgF6("PEGOU " + (g.nome === CONFIG.nomeTia ? "A " : "O ") + g.nome + "!", 2.2);
+    }
+  }
+
+  if (f6.fugitivos.every((g) => g.pego)) {
+    // quanto mais rápido, mais ponto
+    jogo.pontos += 800 + Math.max(0, Math.round((60 - f6.tempo) * 20));
+    SFX.vitoria();
+    criarConfete();
+    trocarEstado("VITORIA");
+  }
+}
+
+function desenharQuintal() {
+  // Grama do quintal num verde mais claro que o das folhas. Se usasse o mesmo
+  // "#3fa34d" dos sprites de planta, as árvores sumiriam no fundo.
+  ctx.fillStyle = "#7bb661"; ctx.fillRect(0, QUINTAL_Y, W, H - QUINTAL_Y);
+  ctx.fillStyle = "#6da555";
+  for (let y = QUINTAL_Y; y < H; y += 22) ctx.fillRect(0, y, W, 3);
+
+  // parede dos fundos da casa e cerca em volta
+  ctx.fillStyle = "#d9cfae"; ctx.fillRect(0, QUINTAL_Y, W, 26);
+  ctx.fillStyle = "#5b3a1a"; ctx.fillRect(200, QUINTAL_Y + 6, 40, 20);
+  ctx.fillStyle = "#8b5a2b";
+  for (let x = 4; x < W; x += 22) ctx.fillRect(x, H - 16, 12, 16);
+  ctx.fillRect(0, H - 20, W, 5);
+
+  // varal com roupinhas
+  ctx.fillStyle = "#c8c2ad"; ctx.fillRect(60, 88, 330, 3);
+  const roupas = ["#f2a3c7", "#7fc4ff", "#f7c948", "#ffffff"];
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = roupas[i];
+    ctx.fillRect(96 + i * 74, 91, 26, 22 + (i % 2) * 6);
+  }
+
+  // móveis do quintal
+  for (const m of MOVEIS) spriteC(SPR[m.spr], m.x, m.y, m.esc);
+
+  // quem já foi pego senta no chão rindo
+  for (const g of f6.fugitivos) {
+    if (g.pego) {
+      const spr = g.spr === "nuna" ? SPR.nuna : SPR.thomasBaixo0;
+      spriteC(spr, g.x, g.y + 6, 2, { S: "#f3c39a" });
+      painel(g.x - 30, g.y - 40, 60, 20, "#f2a3c7");
+      texto("HAHA!", g.x, g.y - 36, { tam: 11, cor: "#f2a3c7" });
+    } else {
+      const q = Math.floor(g.anim) % 2;
+      if (g.spr === "nuna") spriteC(SPR.nuna, g.x, g.y, 2, null, g.dir < 0);
+      else spriteC(q ? SPR.thomasBaixo1 : SPR.thomasBaixo0, g.x, g.y, 2, null, g.dir < 0);
+      if (g.descanso > 0) {
+        painel(g.x - 26, g.y - 44, 52, 20, "#f7c948");
+        texto("UFA!", g.x, g.y - 40, { tam: 11, cor: "#f7c948" });
+      }
+    }
+  }
+
+  // o Tuti pegador
+  const q = Math.floor(f6.anim) % 2;
+  let spr, esp = false;
+  if (f6.dir === "cima") spr = q ? SPR.tutiCima1 : SPR.tutiCima0;
+  else if (f6.dir === "baixo") spr = q ? SPR.tutiBaixo1 : SPR.tutiBaixo0;
+  else { spr = q ? SPR.tutiLado1 : SPR.tutiLado0; esp = f6.dir === "esq"; }
+  spriteC(spr, f6.x, f6.y, 2, null, esp);
+
+  if (f6.msgT > 0) {
+    ctx.font = 'bold 14px "Courier New", monospace';
+    const lt = ctx.measureText(f6.msg).width + 24;
+    painel(W / 2 - lt / 2, 300, lt, 26);
+    texto(f6.msg, W / 2, 305, { tam: 14, cor: "#f7c948" });
+  }
+
+  painel(0, 0, W, HUD_H);
+  texto("PEGA-PEGA!", 10, 5, { tam: 10, align: "left", cor: "#f3c39a" });
+  texto("VOCÊ É O PEGADOR", 10, 18, { tam: 15, align: "left", cor: "#f7c948" });
+  for (let i = 0; i < f6.fugitivos.length; i++) {
+    const g = f6.fugitivos[i];
+    const x = 236 + i * 118;
+    ctx.fillStyle = g.pego ? "rgba(63,163,77,.35)" : "rgba(255,255,255,.08)";
+    ctx.fillRect(x - 4, 8, 112, 28);
+    texto(g.pego ? "PEGOU!" : g.nome, x + 52, 15, { tam: 12, cor: g.pego ? "#3fa34d" : "#ffffff" });
+  }
+  texto(f6.tempo.toFixed(1) + "s", 470, 4, { tam: 12, align: "right", cor: "#c8c2ad" });
 }
 
 /* ==========================================================================
@@ -2028,8 +2791,7 @@ function desenharGameOver() {
   fundoNoite();
   texto("OPA!", W / 2, 70, { tam: 40, cor: "#d9463c" });
   texto("TENTA DE NOVO, " + CONFIG.nomeMenino + "!", W / 2, 122, { tam: 18, cor: "#f7c948" });
-  texto(jogo.faseDoGameOver === 1 ? "FASE 1 — A CORRIDA PRA ESCOLA" : "FASE 2 — DESAFIOS NA ESCOLA",
-    W / 2, 152, { tam: 12, cor: "#c8c2ad" });
+  texto(jogo.nomeFase, W / 2, 152, { tam: 12, cor: "#c8c2ad" });
 
   painel(96, 186, 288, 26, "#f2a3c7");
   texto("A TIA TÁ AQUI, VAMO DE NOVO!", W / 2, 191, { tam: 12, cor: "#f2a3c7" });
@@ -2065,7 +2827,8 @@ function quadro(agora) {
   if (dt > 0.05) dt = 0.05;   // evita "teleporte" se a aba travar
 
   // pausa / som
-  if (foiApertada("KeyP") && ["MANHA", "FASE1", "FASE2"].indexOf(jogo.estado) >= 0) jogo.pausado = !jogo.pausado;
+  if (foiApertada("KeyP") && ["MANHA", "FASE1", "FASE2", "RECREIO", "QUINTAL"].indexOf(jogo.estado) >= 0)
+    jogo.pausado = !jogo.pausado;
   if (foiApertada("KeyM")) { som.ligado = !som.ligado; if (som.ligado) SFX.coleta(); }
 
   if (!jogo.pausado) {
@@ -2088,6 +2851,15 @@ function quadro(agora) {
       case "FASE2":
         atualizarFase2(dt);
         break;
+      case "RECREIO":
+        atualizarRecreio(dt);
+        break;
+      case "QUINTAL":
+        atualizarQuintal(dt);
+        break;
+      case "TRANSICAO":
+        if (jogo.t > 0.5 && foiApertada("Space")) trans.proxima();
+        break;
       case "VITORIA":
         atualizarConfete(dt);
         if (jogo.t > 1 && foiApertada("Space")) { jogo.pontos = 0; trocarEstado("TITULO"); }
@@ -2095,7 +2867,7 @@ function quadro(agora) {
       case "GAMEOVER":
         if (jogo.t > 0.6 && foiApertada("Space")) {
           jogo.pontos = jogo.pontosFase;
-          if (jogo.faseDoGameOver === 1) iniciarFase1(); else iniciarFase2();
+          if (jogo.reiniciarFase) jogo.reiniciarFase();
         }
         break;
     }
@@ -2114,6 +2886,9 @@ function quadro(agora) {
     case "FASE1": desenharFase1(); break;
     case "INTERVALO": desenharIntervalo(); break;
     case "FASE2": desenharFase2(); break;
+    case "RECREIO": desenharRecreio(); break;
+    case "QUINTAL": desenharQuintal(); break;
+    case "TRANSICAO": desenharTransicao(); break;
     case "VITORIA": desenharVitoria(); break;
     case "GAMEOVER": desenharGameOver(); break;
   }
