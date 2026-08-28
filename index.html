@@ -967,6 +967,7 @@ function soltarTudo() { for (const k in teclas) teclas[k] = false; ordemSetas.le
 
 addEventListener("keydown", (e) => {
   if (BLOQUEAR.indexOf(e.code) >= 0) e.preventDefault();
+  marcarControle(false);
   apertar(e.code);
 });
 
@@ -977,9 +978,12 @@ addEventListener("blur", soltarTudo);
 function foiApertada(code) { return apertadas.has(code); }
 
 /* ---- botões de toque ---- */
-// no celular não existe "ESPAÇO": os textos da tela trocam pra "AÇÃO"
+// no celular não existe "ESPAÇO": os textos da tela trocam pra "AÇÃO".
+// Num controle de videogame não existe nenhum dos dois: trocam pra "A".
 let ehToque = false;
-function txAcao() { return ehToque ? "AÇÃO" : "ESPAÇO"; }
+let ehControle = false;
+function txAcao() { return ehToque ? "AÇÃO" : ehControle ? "A" : "ESPAÇO"; }
+function txPausa() { return ehControle && !ehToque ? "START" : "P"; }
 
 function ligarToque() {
   if (ehToque) return;
@@ -1012,6 +1016,50 @@ for (const bt of document.querySelectorAll("#controles .bt")) {
   bt.addEventListener("pointercancel", largar);
   bt.addEventListener("lostpointercapture", largar);
   bt.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+/* ---- controle de videogame (Gamepad API) ---- */
+// Qualquer controle no layout "standard" — USB, Bluetooth ou os botões de um
+// portátil (Anbernic etc.) jogando por streaming — entra pelos mesmos
+// apertar()/soltar() do teclado. A leitura é por sondagem a cada quadro
+// porque a Gamepad API não dispara evento de botão.
+const PAD_BOTOES = {
+  12: "ArrowUp", 13: "ArrowDown", 14: "ArrowLeft", 15: "ArrowRight",
+  0: "Space", 1: "Space",   // A e B fazem a mesma AÇÃO: criança não erra
+  9: "KeyP",                // START = pausa
+  8: "KeyM",                // SELECT = liga/desliga o som
+};
+const padSegurando = {};
+
+const rodape = document.getElementById("rodape");
+const RODAPE_TECLADO = rodape.textContent;
+const RODAPE_CONTROLE = "SETAS = MOVER  •  A = AÇÃO  •  START = PAUSA  •  SELECT = SOM";
+
+// as dicas seguem a última coisa usada: apertou o controle, mostram "A";
+// voltou pro teclado, mostram "ESPAÇO" de novo
+function marcarControle(usando) {
+  if (ehControle === usando) return;
+  ehControle = usando;
+  rodape.textContent = usando ? RODAPE_CONTROLE : RODAPE_TECLADO;
+}
+
+function lerControle() {
+  if (!navigator.getGamepads) return;
+  const agora = {};
+  for (const pad of navigator.getGamepads()) {
+    if (!pad || !pad.connected) continue;
+    for (const i in PAD_BOTOES)
+      if (pad.buttons[i] && pad.buttons[i].pressed) agora[PAD_BOTOES[i]] = true;
+    // analógico esquerdo também move
+    if (pad.axes[0] < -0.5) agora.ArrowLeft = true;
+    if (pad.axes[0] > 0.5) agora.ArrowRight = true;
+    if (pad.axes[1] < -0.5) agora.ArrowUp = true;
+    if (pad.axes[1] > 0.5) agora.ArrowDown = true;
+  }
+  for (const code in agora)
+    if (!padSegurando[code]) { padSegurando[code] = true; marcarControle(true); apertar(code); }
+  for (const code in padSegurando)
+    if (padSegurando[code] && !agora[code]) { padSegurando[code] = false; soltar(code); }
 }
 
 /* --------------------------------------------------------------------------
@@ -3636,7 +3684,10 @@ function desenharTitulo() {
   texto("COMO JOGAR", 386, 126, { tam: 12, cor: "#f7c948" });
   texto("SETAS = ANDAR", 386, 146, { tam: 11 });
   texto(txAcao() + " = AÇÃO", 386, 162, { tam: 11 });
-  texto(ehToque ? "II = PAUSA / ♪ = SOM" : "P = PAUSA / M = SOM", 386, 178, { tam: 10, cor: "#c8c2ad" });
+  // a linha do controle é mais comprida, então encolhe pra caber no painel
+  texto(ehToque ? "II = PAUSA / ♪ = SOM"
+      : ehControle ? "START = PAUSA / SELECT = SOM"
+      : "P = PAUSA / M = SOM", 386, 178, { tam: ehControle && !ehToque ? 9 : 10, cor: "#c8c2ad" });
 
   if (Math.floor(jogo.t * 2) % 2 === 0)
     texto("APERTE " + txAcao() + " PRA COMEÇAR", W / 2, 338, { tam: 15, cor: "#f7c948" });
@@ -3772,7 +3823,7 @@ function desenharPausa() {
   ctx.fillStyle = "rgba(9,11,20,0.75)";
   ctx.fillRect(0, 0, W, H);
   texto("PAUSADO", W / 2, 140, { tam: 34, cor: "#f7c948" });
-  texto("APERTE P PRA VOLTAR", W / 2, 190, { tam: 14 });
+  texto("APERTE " + txPausa() + " PRA VOLTAR", W / 2, 190, { tam: 14 });
 }
 
 /* ==========================================================================
@@ -3786,6 +3837,8 @@ function quadro(agora) {
   let dt = (agora - ultimo) / 1000;
   ultimo = agora;
   if (dt > 0.05) dt = 0.05;   // evita "teleporte" se a aba travar
+
+  lerControle();
 
   // pausa / som
   if (foiApertada("KeyP") && ["MANHA", "FASE1", "FASE2", "RECREIO", "QUINTAL", "SALA"].indexOf(jogo.estado) >= 0)

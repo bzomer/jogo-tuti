@@ -17,6 +17,12 @@ Joguinho de pixel art feito de presente para o Tuti, 7 anos.
 tela, e as dicas do jogo trocam "ESPAÇO" por "AÇÃO". Em pé os botões ficam
 embaixo do jogo; deitado eles vão pras laterais, sem cobrir nada da tela.
 
+**Com controle de videogame** (USB ou Bluetooth) também funciona: direcional
+ou analógico movem, **A** ou **B** é a ação, **START** pausa e **SELECT** liga
+e desliga o som. As dicas trocam pra "A" sozinhas ao apertar o controle. É
+isso que deixa o jogo jogável num portátil tipo o Anbernic RG35XXSP — o passo
+a passo com Knulli + Moonlight está no [KNULLI.md](KNULLI.md).
+
 ## As fases
 
 **1. A manhã em casa** — quatro tarefinhas antes de sair: acordar no despertador,
