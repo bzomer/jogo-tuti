@@ -1,0 +1,3678 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ==========================================================================
+# TIA MOTORA EM MISSÃO! — jogo do Tuti (versão pygame para Knulli/Batocera)
+# Port fiel do index.html original. Um arquivo só, sem dependências além
+# do pygame. Copie para /userdata/roms/pygame/TiaMotora.pygame
+#
+# Controles no console: direcional = setas, A/B/X/Y = ação,
+# START = pausa, SELECT = som, SELECT+START = sair.
+# ==========================================================================
+import math
+import random
+import sys
+import os
+from array import array
+from types import SimpleNamespace as NS
+
+import pygame
+
+CONFIG = dict(
+    nomeMenino="TUTI",
+    nomeTia="TIA NUNA",
+    nomeIrmao="THOMAS",
+    nomeEscola="ESCOLA PIRATINI",
+
+    vidas=3,
+    invencivel=1.6,
+
+    # ---- MINI-FASE: a manhã em casa ----
+    acordarPorAperto=9,
+    acordarQueda=7,
+    cafeMeta=6,
+    cafeQueda=105,
+    cafeIntervalo=0.95,
+    dentesQtd=8,
+    dentesForca=2.2,
+    velEscova=205,
+    velQuarto=135,
+
+    # ---- FASE 1: a corrida pra escola ----
+    distTotal=7350,
+    amigos=3,
+    velBase=210,
+    velMax=300,
+    velMin=145,
+    velLateral=235,
+    turboVel=430,
+    turboDur=0.7,
+    turboRecarga=3.5,
+    combustivelMax=100,
+    gastoCombustivel=2.3,
+    intervaloObstaculo=1.15,
+    intervaloItem=3.6,
+    avisoAmigo=430,
+
+    # ---- FASE 4: recreio ----
+    velRecreio=132,
+    alcanceEspiar=40,
+    intervaloRisada=3.5,
+
+    # ---- FASE 5: corrida de volta ----
+    qtdRivais=3,
+    velRival=[198, 210, 222],
+    elastico=34,
+
+    # ---- FASE 6: pega-pega ----
+    velPegador=134,
+    velThomas=88,
+    velNunaFuga=148,
+    descansoNuna=5.5,
+    descansoDur=1.6,
+
+    # ---- FASE 7: a noite na sala ----
+    duracaoEpisodio=26,
+    velFoguete=215,
+    puloDino=360,
+    gravidadeDino=980,
+    velChaoDino=205,
+    velMergulho=155,
+
+    # ---- FASE 2: desafios na escola ----
+    velTuti=118,
+    velMonstro=72,
+    gritoDur=2.2,
+    gritoRecarga=6,
+)
+
+W, H = 480, 360
+PX = 2
+HUD_H = 44
+
+# --------------------------------------------------------------------------
+# PALETA E SPRITES (cada letra = uma cor; "." = transparente)
+# --------------------------------------------------------------------------
+CORES = {
+    ".": None,
+    "k": "#12131a", "d": "#2b2f3d", "b": "#5d6272", "c": "#a9afc0", "w": "#ffffff",
+    "y": "#f7c948", "o": "#e8853a", "r": "#d9463c", "p": "#f2a3c7", "s": "#f3c39a",
+    "h": "#b0793f", "H": "#7a4a24", "g": "#3fa34d", "G": "#276b32", "a": "#3f6fd1",
+    "A": "#223a72", "l": "#7fc4ff", "n": "#c2a06a", "e": "#8b5a2b",
+    "S": "#12131a",
+    # "f" não existe na paleta do original: pixels "f" ficam transparentes lá
+    # (o || CORES[ch] devolve undefined e o pixel é pulado). Mantido igual.
+}
+
+SPR = {}
+
+SPR["carro"] = [
+    "...kkkkkkkkkk...",
+    "..kwwddddddwwk..",
+    "..kddddddddddk..",
+    "..kddllllllddk..",
+    "..kdllllllllck..",
+    "..kdllllllllck..",
+    ".kkddddddddddkk.",
+    ".kkddddddddddkk.",
+    "..kddddddddddk..",
+    "..kddddddddddk..",
+    "..kddddddddddk..",
+    "..kddddddddddk..",
+    "..kddddddddddk..",
+    "..kddddddddddk..",
+    "..kddddddddddk..",
+    "..kdllllllllck..",
+    "..kddllllllddk..",
+    "..kddddddddddk..",
+    "..krrddddddrrk..",
+    "...kkkkkkkkkk...",
+]
+SPR["carroFrente"] = list(reversed(SPR["carro"]))
+
+SPR["carroLado"] = [
+    "........dddddddddd........",
+    ".....ddddllllllllddd......",
+    "....dlllllllddlllllllld...",
+    "..dddddddddddddddddddddd..",
+    ".rddddddddddddddddddddddw.",
+    ".dddddddddddddddddddddddd.",
+    ".dddddddddddddddddddddddd.",
+    "..dddddddddddddddddddddd..",
+    "...kkkk..........kkkk.....",
+    "..kkcckk........kkcckk....",
+    "..kkcckk........kkcckk....",
+    "...kkkk..........kkkk.....",
+]
+
+SPR["tutiBaixo0"] = [
+    "....HHHH....",
+    "...HHHHHH...",
+    "..HHHHHHHH..",
+    "..HssssssH..",
+    "..ssssssss..",
+    "..skssssks..",
+    "..ssssssss..",
+    "..ssskksss..",
+    "...ssssss...",
+    "....ssss....",
+    "..agggggga..",
+    ".aaggggggaa.",
+    ".sagwwwwgas.",
+    ".sggggggggs.",
+    "...AAAAAA...",
+    "...AA..AA...",
+    "...SS..SS...",
+]
+SPR["tutiBaixo1"] = SPR["tutiBaixo0"][:15] + ["..AAA..AAA..", "..SS....SS.."]
+
+SPR["tutiCima0"] = [
+    "....HHHH....",
+    "...HHHHHH...",
+    "..HHHHHHHH..",
+    "..HHHHHHHH..",
+    "..HHHHHHHH..",
+    "..HHHHHHHH..",
+    "..sHHHHHHs..",
+    "...HHHHHH...",
+    "...ssssss...",
+    "....ssss....",
+    "..agggggga..",
+    ".aaaaaaaaaa.",
+    ".saaaaaaaas.",
+    ".saaaaaaaas.",
+    "...AAAAAA...",
+    "...AA..AA...",
+    "...SS..SS...",
+]
+SPR["tutiCima1"] = SPR["tutiCima0"][:15] + ["..AAA..AAA..", "..SS....SS.."]
+
+SPR["tutiLado0"] = [
+    "...HHHHH....",
+    "..HHHHHHH...",
+    "..HHHHHsss..",
+    "..HHssssss..",
+    "..Hsssskss..",
+    "..Hssssssk..",
+    "...ssssss...",
+    "....ssss....",
+    "....ssss....",
+    "..aggggggs..",
+    "..aggggggs..",
+    "..aggggggs..",
+    "..aggggggs..",
+    "...gggggg...",
+    "...AAAAAA...",
+    "...AA.AA....",
+    "...SS.SS....",
+]
+SPR["tutiLado1"] = SPR["tutiLado0"][:15] + ["..AA...AA...", "..SS...SS..."]
+
+SPR["nuna"] = [
+    "...hhhhhh...",
+    "..hhhhhhhh..",
+    ".hhhhhhhhhh.",
+    ".hhsssssshh.",
+    ".hssssssssh.",
+    ".hskssssksh.",
+    ".hssssssssh.",
+    ".hsssppsssh.",
+    ".hhsssssshh.",
+    ".hhhhhhhhhh.",
+    ".hwwwwwwwwh.",
+    ".swwwwwwwws.",
+    ".shwwwwwwhs.",
+    ".swwwwwwwws.",
+    "..wwwwwwww..",
+    "..nnnnnnnn..",
+    ".nnnnnnnnnn.",
+    "...ss..ss...",
+    "...ss..ss...",
+    "...ss..ss...",
+    "...kk..kk...",
+]
+
+SPR["monstro"] = [
+    "...cccccc...",
+    "..cwwccwwc..",
+    ".cwwwccwwwc.",
+    ".cwwwwwwwwc.",
+    ".cwkwwwwkwc.",
+    ".cwwwwwwwwc.",
+    ".cwwkkkkwwc.",
+    ".cwwwwwwwwc.",
+    "..cwwwwwwc..",
+    "..ccwwwwcc..",
+    "...cccccc...",
+    "....cccc....",
+]
+
+SPR["cone"] = [
+    "....oo....",
+    "....oo....",
+    "...oooo...",
+    "...oooo...",
+    "..wwwwww..",
+    "..wwwwww..",
+    "..oooooo..",
+    ".oooooooo.",
+    ".oooooooo.",
+    "kkkkkkkkkk",
+    "kkkkkkkkkk",
+    ".kkkkkkkk.",
+]
+
+SPR["poca"] = [
+    "....aaaaaa....",
+    "..aallllllaa..",
+    ".aallwwllllaa.",
+    "aallllllllllaa",
+    "aallllllllllaa",
+    ".allllllwwlla.",
+    "..aallllllaa..",
+    "....aaaaaa....",
+]
+
+SPR["gasolina"] = [
+    "...kkkk...",
+    "..krrrrk..",
+    ".kkkkkkkk.",
+    ".krrrrrrk.",
+    ".krwwwwrk.",
+    ".krwrrwrk.",
+    ".krwwwwrk.",
+    ".krrrrrrk.",
+    ".krrrrrrk.",
+    ".krrrrrrk.",
+    ".kkkkkkkk.",
+    "..kkkkkk..",
+]
+
+SPR["estrela"] = [
+    "....y....",
+    "....y....",
+    "...yyy...",
+    "yyyyyyyyy",
+    ".yyyyyyy.",
+    "..yyyyy..",
+    "..yy.yy..",
+    ".yy...yy.",
+    ".y.....y.",
+]
+
+SPR["chave"] = [
+    ".yyyy.......",
+    "yy..yy......",
+    "yy..yyyyyyyy",
+    "yy..yy..y.y.",
+    "yy..yy......",
+    ".yyyy.......",
+]
+
+SPR["mochila"] = [
+    "...aaaaaa...",
+    "..aaaaaaaa..",
+    ".aaaaaaaaaa.",
+    ".aAAAAAAAAa.",
+    ".aAwwwwwwAa.",
+    ".aAwyyyywAa.",
+    ".aAwwwwwwAa.",
+    ".aAAAAAAAAa.",
+    ".aAAAAAAAAa.",
+    ".aaaaaaaaaa.",
+    "..aaaaaaaa..",
+    "...k....k...",
+]
+
+SPR["lapis"] = [
+    "....kk....",
+    "...keek...",
+    "..eeeeee..",
+    "..yyyyyy..",
+    "..yooooy..",
+    "..yyyyyy..",
+    "..yyyyyy..",
+    "..yooooy..",
+    "..yyyyyy..",
+    "..yyyyyy..",
+    "..cccccc..",
+    "..pppppp..",
+]
+
+SPR["lanche"] = [
+    ".......GG...",
+    "....e..GG...",
+    "....e.......",
+    "..rrrrrrrr..",
+    ".rrrwrrrrrr.",
+    "rrrwrrrrrrrr",
+    "rrrrrrrrrrrr",
+    "rrrrrrrrrrrr",
+    ".rrrrrrrrrr.",
+    ".rrrrrrrrrr.",
+    "..rrrrrrrr..",
+    "...rr..rr...",
+]
+
+SPR["despertador"] = [
+    "..k......k..",
+    ".kkk....kkk.",
+    "kkwwkkkkwwkk",
+    ".kwwwwwwwwk.",
+    "kwwwkwwkwwwk",
+    "kwwwwkwkwwwk",
+    "kwwwwwkwwwwk",
+    "kwwwwwwwwwwk",
+    "kwwwwwwwwwwk",
+    ".kwwwwwwwwk.",
+    "..kkkkkkkk..",
+    "..k......k..",
+]
+
+SPR["tutiDormindo"] = [
+    "...HHHHHH...",
+    "..HHHHHHHH..",
+    ".HHssssssHH.",
+    ".Hskksskks..",
+    ".Hssssssss..",
+    "..ssssssss..",
+    "...ssssss...",
+    "....ssss....",
+]
+
+SPR["pao"] = [
+    "..eeeeee..",
+    ".eeeeeeee.",
+    "ennnnnnnne",
+    "ennnnnnnne",
+    "ennnnnnnne",
+    "ennnnnnnne",
+    ".eeeeeeee.",
+    "..eeeeee..",
+]
+
+SPR["leite"] = [
+    "cwwwwwwwwc",
+    ".cwwwwwwc.",
+    ".cwwwwwwc.",
+    ".cwwwwwwc.",
+    ".cwwwwwwc.",
+    "..cwwwwc..",
+    "..cwwwwc..",
+    "..cccccc..",
+]
+
+SPR["banana"] = [
+    "......GG..",
+    ".....yyy..",
+    "....yyy...",
+    "...yyy....",
+    "..yyy.....",
+    ".yyy......",
+    ".yyy......",
+    "..yyy.....",
+]
+
+SPR["bolacha"] = [
+    "..eeeeee..",
+    ".eekeekee.",
+    "eeeeeeeeee",
+    "ekeeeeekee",
+    "eeeeeeeeee",
+    "eekeeeeeke",
+    ".eeeeeeee.",
+    "..eeeeee..",
+]
+
+SPR["prato"] = [
+    "wwwwwwwwwwwwwwww",
+    "cwwwwwwwwwwwwwwc",
+    ".cccccccccccccc.",
+    "..cccccccccccc..",
+]
+
+SPR["escova"] = [
+    "...........lwwl.",
+    "..........lwwwwl",
+    "aaaaaaaaaawwwwww",
+    "aaaaaaaaaawwwwww",
+    "..........lwwwwl",
+    "...........lwwl.",
+]
+
+SPR["camiseta"] = [
+    "gg..gggg..gg",
+    "gggggggggggg",
+    "gggggggggggg",
+    ".gggggggggg.",
+    "..gggggggg..",
+    "..gggggggg..",
+    "..gggggggg..",
+    "..gggggggg..",
+]
+
+SPR["calca"] = [
+    "..AAAAAAAA..",
+    "..AAAAAAAA..",
+    "..AAAAAAAA..",
+    "..AAA..AAA..",
+    "..AAA..AAA..",
+    "..AAA..AAA..",
+    "..AAA..AAA..",
+    "..AAA..AAA..",
+]
+
+SPR["tenis"] = [
+    "............",
+    "..SS....SS..",
+    "..SS....SS..",
+    ".SSSS..SSSS.",
+    "SSSSSSSSSSSS",
+    "wwwwwwwwwwww",
+]
+
+SPR["thomasBaixo0"] = [
+    "...HHHH...",
+    "..HHHHHH..",
+    ".HHHHHHHH.",
+    ".HssssssH.",
+    ".ssssssss.",
+    ".skssssks.",
+    "..sskkss..",
+    "...ssss...",
+    ".rrrrrrrr.",
+    "srrrrrrrrs",
+    "..AAAAAA..",
+    "..AA..AA..",
+    "..SS..SS..",
+]
+SPR["thomasBaixo1"] = SPR["thomasBaixo0"][:11] + [".AAA..AAA.", ".SS....SS."]
+
+SPR["arvore"] = [
+    "...GGGGGG...",
+    ".GGggggggGG.",
+    "GGgggGgggggG",
+    "GgggggggggGG",
+    "GggGgggggggG",
+    "GgggggggGggG",
+    "GggggGggggGG",
+    "GgggggggggGG",
+    "GGgggGgggggG",
+    "GGgggggggGG.",
+    ".GGggggggGG.",
+    "...GGGGGG...",
+]
+
+SPR["arbusto"] = [
+    "...GGGGG....",
+    ".GGgggggGG..",
+    "GgggggggggG.",
+    "GggggGgggggG",
+    "GggggggggggG",
+    "GgggggGggggG",
+    "GggggggggggG",
+    ".GgggggggggG",
+    "..GGgggggGG.",
+    "...GGGGGG...",
+]
+
+SPR["banco"] = [
+    "ffffffffffff",
+    "eeeeeeeeeeee",
+    "eeeeeeeeeeee",
+    "ffffffffffff",
+    "eeeeeeeeeeee",
+    "eeeeeeeeeeee",
+    "ffffffffffff",
+    "eeeeeeeeeeee",
+    "eeeeeeeeeeee",
+    "ffffffffffff",
+]
+
+SPR["escorrega"] = [
+    "..cccccccc..",
+    "..c......c..",
+    "..c......c..",
+    "..cccccccc..",
+    "...cyyyyc...",
+    "...cyyyyc...",
+    "...cyyyyc...",
+    "...cyyyyc...",
+    "...cyyyyc...",
+    "...cyyyyc...",
+    "...cyyyyc...",
+    "...cccccc...",
+]
+
+SPR["caixaDagua"] = [
+    "..cccccc..",
+    ".cccccccc.",
+    "ccaaaaaacc",
+    "caaaaaaaac",
+    "caaaaaaaac",
+    "caaaaaaaac",
+    "caaaaaaaac",
+    "ccaaaaaacc",
+    ".cccccccc.",
+    "..cccccc..",
+]
+
+SPR["piscina"] = [
+    "...cccccc...",
+    ".ccllllllcc.",
+    ".cllllllllc.",
+    "cllllllllllc",
+    "cllllllllllc",
+    "cllllllllllc",
+    "cllllllllllc",
+    ".cllllllllc.",
+    ".ccllllllcc.",
+    "...cccccc...",
+]
+
+SPR["casinhaCao"] = [
+    "....ffff....",
+    "..ffeeeeff..",
+    ".feeeeeeeef.",
+    "feeeeeeeeeef",
+    "eeeekkkkeeee",
+    "eeekkkkkkeee",
+    "eeekkkkkkeee",
+    "eeekkkkkkeee",
+    "eeekkkkkkeee",
+    "ffffffffffff",
+]
+
+SPR["controle"] = [
+    "kkkkkk",
+    "krrrrk",
+    "kkkkkk",
+    "kwkwkk",
+    "kwkwkk",
+    "kwkwkk",
+    "kkkkkk",
+]
+
+SPR["foguete"] = [
+    "....ww....",
+    "...wwww...",
+    "..wwrrww..",
+    "..wwrrww..",
+    "..wwwwww..",
+    ".wwwwwwww.",
+    "rwwwwwwwwr",
+    "rwwwwwwwwr",
+    ".r.oyyo.r.",
+    "...oyyo...",
+    "....oo....",
+]
+
+SPR["meteoro"] = [
+    "..dddd..",
+    ".dbbbbd.",
+    "dbbcbbbd",
+    "dbcbbbbd",
+    "dbbbbcbd",
+    "dbbbbbbd",
+    ".dbbbbd.",
+    "..dddd..",
+]
+
+SPR["pedra"] = [
+    "..dddd..",
+    ".dbbbbd.",
+    "dbbcbbbd",
+    "dbbbbbbd",
+    "ddbbbbdd",
+    ".dddddd.",
+]
+
+SPR["dino"] = [
+    "..........GGGG..",
+    ".........GggggG.",
+    ".........Ggkggg.",
+    ".........Gggggg.",
+    "GG.......GggggG.",
+    "GgG.....GggggG..",
+    "GggGGGGGggggG...",
+    "GgggggggggggG...",
+    ".GggggggggggG...",
+    "..GgggggggggG...",
+    "...GggGGGggG....",
+    "...Ggg...Ggg....",
+    "...GG.....GG....",
+    "..GGG.....GGG...",
+]
+
+SPR["peixe"] = [
+    "....yy....",
+    "...yyyy.yy",
+    ".yyyyyyyyy",
+    "yykyyyyyyy",
+    ".yyyyyyyyy",
+    "...yyyy.yy",
+    "....yy....",
+]
+
+SPR["aguaViva"] = [
+    "..pppp..",
+    ".pppppp.",
+    "pppppppp",
+    "pkppppkp",
+    "pppppppp",
+    ".p.pp.p.",
+    "p..pp..p",
+    ".p.pp.p.",
+    "p..p..p.",
+]
+
+SPR["mergulhador"] = [
+    "...HHHHH....",
+    "..HHHHHHH...",
+    "..HHHHHsss..",
+    "..cllllllc..",
+    "..cllkllkc..",
+    "..Hssssssk..",
+    "...ssssss...",
+    "....ssss....",
+    "..aggggggs..",
+    "..aggggggs..",
+    "..aggggggs..",
+    "...gggggg...",
+    "...AAAAA....",
+    "..SSSS.SSS..",
+]
+
+SPR["carinha"] = [
+    ".HHHHH.",
+    "HHHHHHH",
+    "HsssssH",
+    "sksssks",
+    "sssksss",
+    ".sssss.",
+]
+
+SPR["coracao"] = [
+    ".rr.rr.",
+    "rrrrrrr",
+    "rrrrrrr",
+    ".rrrrr.",
+    "..rrr..",
+    "...r...",
+]
+
+
+# --------------------------------------------------------------------------
+# TELA — inicialização do pygame
+# --------------------------------------------------------------------------
+try:
+    pygame.mixer.pre_init(22050, -16, 1, 512)
+except Exception:
+    pass
+pygame.init()
+
+_JANELA = "-w" in sys.argv or "--window" in sys.argv
+if _JANELA:
+    screen = pygame.display.set_mode((960, 720))
+else:
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+pygame.display.set_caption("Tia Motora em Missão!")
+pygame.mouse.set_visible(False)
+
+SCR_W, SCR_H = screen.get_size()
+# mantém a proporção 4:3 dentro da tela do aparelho
+_esc = min(SCR_W / W, SCR_H / H)
+DEST_W, DEST_H = int(W * _esc), int(H * _esc)
+DEST_X, DEST_Y = (SCR_W - DEST_W) // 2, (SCR_H - DEST_H) // 2
+
+tela = pygame.Surface((W, H))       # o "canvas" de 480x360 do original
+alvo = tela                         # superfície onde os helpers desenham
+
+MG_W, MG_H = 448, 292
+mg_surf = pygame.Surface((MG_W, MG_H))
+
+clock = pygame.time.Clock()
+
+# --------------------------------------------------------------------------
+# DESENHO — utilitários (equivalentes do ctx do canvas)
+# --------------------------------------------------------------------------
+_cor_cache = {}
+
+def col(c):
+    """'#rrggbb' -> tupla RGB (com cache)."""
+    t = _cor_cache.get(c)
+    if t is None:
+        t = (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16))
+        _cor_cache[c] = t
+    return t
+
+def ret(cor, x, y, w, h):
+    pygame.draw.rect(alvo, col(cor), (int(x), int(y), int(math.ceil(w)), int(math.ceil(h))))
+
+def ret_alpha(rgba, x, y, w, h):
+    w, h = int(math.ceil(w)), int(math.ceil(h))
+    if w <= 0 or h <= 0:
+        return
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    s.fill(rgba)
+    alvo.blit(s, (int(x), int(y)))
+
+def ret_borda(cor, x, y, w, h, esp=2):
+    pygame.draw.rect(alvo, col(cor), (int(x), int(y), int(w), int(h)), esp)
+
+def linha(cor, x0, y0, x1, y1, esp=2):
+    pygame.draw.line(alvo, col(cor), (int(x0), int(y0)), (int(x1), int(y1)), esp)
+
+def circulo(cor, x, y, r, esp=0):
+    pygame.draw.circle(alvo, col(cor), (int(x), int(y)), int(r), esp)
+
+def poligono(cor, pontos):
+    pygame.draw.polygon(alvo, col(cor), [(int(px), int(py)) for px, py in pontos])
+
+_grad_cache = {}
+
+def gradiente_v(x, y, w, h, stops):
+    """gradiente vertical; stops = ((pos, cor), ...) — com cache."""
+    key = (int(w), int(h), stops)
+    s = _grad_cache.get(key)
+    if s is None:
+        w_i, h_i = int(w), int(h)
+        s = pygame.Surface((w_i, h_i))
+        st = [(p, col(c)) for p, c in stops]
+        for linha_y in range(h_i):
+            p = linha_y / max(1, h_i - 1)
+            c0, c1, f = st[0][1], st[0][1], 0.0
+            for i in range(len(st) - 1):
+                if st[i][0] <= p <= st[i + 1][0]:
+                    c0, c1 = st[i][1], st[i + 1][1]
+                    span = st[i + 1][0] - st[i][0]
+                    f = (p - st[i][0]) / span if span > 0 else 0.0
+                    break
+            else:
+                if p > st[-1][0]:
+                    c0 = c1 = st[-1][1]
+            cor = tuple(int(c0[j] + (c1[j] - c0[j]) * f) for j in range(3))
+            pygame.draw.line(s, cor, (0, linha_y), (w_i - 1, linha_y))
+        _grad_cache[key] = s
+    alvo.blit(s, (int(x), int(y)))
+
+def larg(spr):
+    return max(len(l) for l in spr)
+
+_spr_cache = {}
+
+def _render_spr(spr, esc, recolor, espelhar):
+    rec_key = None
+    if recolor:
+        rec_key = tuple(sorted(recolor.items()))
+    key = (id(spr), esc, rec_key, bool(espelhar))
+    s = _spr_cache.get(key)
+    if s is None:
+        largura = larg(spr)
+        s = pygame.Surface((largura * esc, len(spr) * esc), pygame.SRCALPHA)
+        for j, linha_s in enumerate(spr):
+            for i, ch in enumerate(linha_s):
+                if ch == ".":
+                    continue
+                cor = (recolor.get(ch) if recolor else None) or CORES.get(ch)
+                if not cor:
+                    continue
+                c = largura - 1 - i if espelhar else i
+                s.fill(col(cor), (c * esc, j * esc, esc, esc))
+        _spr_cache[key] = s
+    return s
+
+def sprite(spr, x, y, esc=None, recolor=None, espelhar=False):
+    esc = esc or PX
+    alvo.blit(_render_spr(spr, esc, recolor, espelhar), (int(round(x)), int(round(y))))
+
+def spriteC(spr, cx_, cy_, esc=None, recolor=None, espelhar=False):
+    esc = esc or PX
+    sprite(spr, cx_ - (larg(spr) * esc) / 2, cy_ - (len(spr) * esc) / 2, esc, recolor, espelhar)
+
+_fontes = {}
+
+def fonte(tam):
+    f = _fontes.get(tam)
+    if f is None:
+        f = pygame.font.Font(None, int(tam * 1.35))
+        f.set_bold(True)
+        _fontes[tam] = f
+    return f
+
+def medir(txt, tam):
+    return fonte(tam).size(txt)[0]
+
+# a fonte embutida do pygame não tem os glifos de seta do original
+_TROCAS = (("←", "<"), ("→", ">"), ("↑", "^"), ("↓", "v"))
+
+def texto(txt, x, y, tam=14, cor="#ffffff", align="center", sombra="#12131a"):
+    for _de, _para in _TROCAS:
+        if _de in txt:
+            txt = txt.replace(_de, _para)
+    f = fonte(tam)
+    surf = f.render(txt, True, col(cor))
+    w = surf.get_width()
+    if align == "center":
+        bx = x - w / 2
+    elif align == "right":
+        bx = x - w
+    else:
+        bx = x
+    if sombra:
+        alvo.blit(f.render(txt, True, col(sombra)), (int(bx + 2), int(y + 2)))
+    alvo.blit(surf, (int(bx), int(y)))
+
+def textoCoracao(txt, x, y, tam=14, cor="#ffffff"):
+    texto(txt, x, y, tam, cor)
+    w = medir(txt, tam)
+    sprite(SPR["coracao"], x + w / 2 + 7, y + tam / 2 - 5, 2)
+
+CINZA = {}
+for _k in CORES:
+    if CORES[_k]:
+        CINZA[_k] = "#22262f" if _k == "k" else "#3a3f4c"
+
+def painel(x, y, w, h, corBorda="#f7c948"):
+    ret_alpha((9, 11, 20, 230), x, y, w, h)
+    ret_borda(corBorda, x + 1, y + 1, w - 2, h - 2, 2)
+
+def barra(x, y, w, h, frac, cor, corFundo="#1c2030"):
+    frac = max(0.0, min(1.0, frac))
+    ret(corFundo, x, y, w, h)
+    ret(cor, x + 2, y + 2, max(0, (w - 4) * frac), h - 4)
+    ret_borda("#12131a", x + 1, y + 1, w - 2, h - 2, 2)
+
+# --------------------------------------------------------------------------
+# SOM — sintetizado na inicialização (sem arquivos), como a WebAudio original
+# --------------------------------------------------------------------------
+som = NS(ligado=True, ok=False)
+SR = 22050
+
+def _amostra(tipo, fase):
+    if tipo == "square":
+        return 1.0 if fase < 0.5 else -1.0
+    if tipo == "sawtooth":
+        return 2.0 * fase - 1.0
+    if tipo == "triangle":
+        return 4.0 * fase - 1.0 if fase < 0.5 else 3.0 - 4.0 * fase
+    return math.sin(2 * math.pi * fase)
+
+def _sintetizar(notas, tipo="square", vol=0.05):
+    total = sum(n[1] for n in notas) + 0.05
+    buf = [0.0] * int(SR * total)
+    t0 = 0.0
+    ln_decai = math.log(0.0001)
+    for freq, dur in notas:
+        ini = int(SR * t0)
+        n = int(SR * (dur + 0.03))
+        for i in range(n):
+            t = i / SR
+            if t < 0.01:
+                env = t / 0.01
+            elif t < dur:
+                env = math.exp(ln_decai * (t - 0.01) / max(0.001, dur - 0.01))
+            else:
+                env = 0.0
+            fase = (t * freq) % 1.0
+            idx = ini + i
+            if idx < len(buf):
+                buf[idx] += _amostra(tipo, fase) * env * vol
+        t0 += dur
+    saida = array("h", (int(max(-1.0, min(1.0, v * 6)) * 32000) for v in buf))
+    return pygame.mixer.Sound(buffer=saida.tobytes())
+
+SFX_SONS = {}
+
+def _criar_sons():
+    global SFX_SONS
+    try:
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(SR, -16, 1, 512)
+        SFX_SONS = {
+            "coleta":  _sintetizar([(880, .06), (1320, .09)]),
+            "item":    _sintetizar([(660, .07), (880, .07), (1320, .12)]),
+            "dano":    _sintetizar([(220, .1), (140, .18)], "sawtooth", .07),
+            "turbo":   _sintetizar([(300, .05), (460, .05), (700, .12)], "square", .05),
+            "grito":   _sintetizar([(500, .07), (760, .07), (1000, .16)], "triangle", .07),
+            "porta":   _sintetizar([(400, .08), (600, .08), (900, .2)]),
+            "fase":    _sintetizar([(523, .12), (659, .12), (784, .12), (1047, .3)]),
+            "vitoria": _sintetizar([(523, .14), (659, .14), (784, .14), (1047, .18), (784, .1), (1047, .45)]),
+            "fim":     _sintetizar([(440, .16), (330, .16), (247, .38)], "sawtooth", .06),
+        }
+        som.ok = True
+    except Exception:
+        som.ok = False
+
+_criar_sons()
+
+class _SFX:
+    def __getattr__(self, nome):
+        def tocar():
+            if som.ligado and som.ok and nome in SFX_SONS:
+                try:
+                    SFX_SONS[nome].play()
+                except Exception:
+                    pass
+        return tocar
+
+SFX = _SFX()
+
+# --------------------------------------------------------------------------
+# CONTROLES — teclado e joystick (no Knulli o direcional já vira seta, mas o
+# joystick também é lido direto, pra funcionar em qualquer aparelho)
+# --------------------------------------------------------------------------
+teclas = {}
+apertadas = set()
+ordemSetas = []
+SETAS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]
+
+def apertar(code):
+    if not teclas.get(code):
+        apertadas.add(code)
+        if code in SETAS:
+            ordemSetas.append(code)
+    teclas[code] = True
+
+def soltar(code):
+    teclas[code] = False
+    if code in ordemSetas:
+        ordemSetas.remove(code)
+
+def foiApertada(code):
+    return code in apertadas
+
+def txAcao():
+    return "AÇÃO"      # no console o botão físico é sempre "ação"
+
+MAPA_TECLADO = {
+    pygame.K_LEFT: "ArrowLeft", pygame.K_RIGHT: "ArrowRight",
+    pygame.K_UP: "ArrowUp", pygame.K_DOWN: "ArrowDown",
+    pygame.K_SPACE: "Space", pygame.K_RETURN: "Space",
+    pygame.K_p: "KeyP", pygame.K_m: "KeyM",
+}
+
+# botões de rosto = ação; START = pausa; SELECT = som
+BOTOES_ACAO = (0, 1, 2, 3)
+BOTOES_PAUSA = (7, 9, 11)
+BOTOES_SOM = (6, 8, 10)
+
+pygame.joystick.init()
+_joysticks = []
+for _i in range(pygame.joystick.get_count()):
+    _j = pygame.joystick.Joystick(_i)
+    _j.init()
+    _joysticks.append(_j)
+
+_hat_estado = {}
+_eixo_estado = {}
+_botoes_baixados = set()
+
+def _seta_virtual(codigo, ligado):
+    if ligado:
+        apertar(codigo)
+    else:
+        soltar(codigo)
+
+def processar_eventos():
+    """Devolve False quando é pra sair do jogo."""
+    for ev in pygame.event.get():
+        if ev.type == pygame.QUIT:
+            return False
+        elif ev.type == pygame.KEYDOWN:
+            if ev.key == pygame.K_ESCAPE:
+                return False
+            c = MAPA_TECLADO.get(ev.key)
+            if c:
+                apertar(c)
+        elif ev.type == pygame.KEYUP:
+            c = MAPA_TECLADO.get(ev.key)
+            if c:
+                soltar(c)
+        elif ev.type == pygame.JOYBUTTONDOWN:
+            _botoes_baixados.add(ev.button)
+            if ev.button in BOTOES_ACAO:
+                apertar("Space")
+            elif ev.button in BOTOES_PAUSA:
+                apertar("KeyP")
+            elif ev.button in BOTOES_SOM:
+                apertar("KeyM")
+            # SELECT + START (qualquer par som+pausa) = sair pro menu
+            if (_botoes_baixados & set(BOTOES_PAUSA)) and (_botoes_baixados & set(BOTOES_SOM)):
+                return False
+        elif ev.type == pygame.JOYBUTTONUP:
+            _botoes_baixados.discard(ev.button)
+            if ev.button in BOTOES_ACAO:
+                soltar("Space")
+            elif ev.button in BOTOES_PAUSA:
+                soltar("KeyP")
+            elif ev.button in BOTOES_SOM:
+                soltar("KeyM")
+        elif ev.type == pygame.JOYHATMOTION:
+            hx, hy = ev.value
+            ant = _hat_estado.get((ev.instance_id, ev.hat), (0, 0))
+            if hx != ant[0]:
+                _seta_virtual("ArrowLeft", hx < 0)
+                _seta_virtual("ArrowRight", hx > 0)
+            if hy != ant[1]:
+                _seta_virtual("ArrowUp", hy > 0)
+                _seta_virtual("ArrowDown", hy < 0)
+            _hat_estado[(ev.instance_id, ev.hat)] = (hx, hy)
+        elif ev.type == pygame.JOYAXISMOTION and ev.axis in (0, 1):
+            chave = (ev.instance_id, ev.axis)
+            ant = _eixo_estado.get(chave, 0)
+            novo = 0
+            if ev.value < -0.5:
+                novo = -1
+            elif ev.value > 0.5:
+                novo = 1
+            if novo != ant:
+                if ev.axis == 0:
+                    _seta_virtual("ArrowLeft", novo == -1)
+                    _seta_virtual("ArrowRight", novo == 1)
+                else:
+                    _seta_virtual("ArrowUp", novo == -1)
+                    _seta_virtual("ArrowDown", novo == 1)
+                _eixo_estado[chave] = novo
+    return True
+
+
+# --------------------------------------------------------------------------
+# ESTADO GERAL
+# --------------------------------------------------------------------------
+jogo = NS(
+    estado="TITULO",
+    t=0.0,
+    pontos=0.0,
+    pontosFase=0.0,
+    vidas=CONFIG["vidas"],
+    pausado=False,
+    tremor=0.0,
+    reiniciarFase=None,
+    nomeFase="",
+)
+
+def trocarEstado(novo):
+    jogo.estado = novo
+    jogo.t = 0.0
+
+def abrirFase(nome, reinicio):
+    jogo.pontosFase = jogo.pontos
+    jogo.vidas = CONFIG["vidas"]
+    jogo.nomeFase = nome
+    jogo.reiniciarFase = reinicio
+
+# --------------------------------------------------------------------------
+# TELA DE TRANSIÇÃO entre fases
+# --------------------------------------------------------------------------
+trans = NS(titulo="", l1="", l2="", proxima=None)
+
+def mostrarTransicao(titulo, l1, l2, proxima):
+    trans.titulo = titulo
+    trans.l1 = l1
+    trans.l2 = l2
+    trans.proxima = proxima
+    SFX.fase()
+    trocarEstado("TRANSICAO")
+
+def desenharTransicao():
+    fundoNoite()
+    CHAO = 320
+    ret("#2c5f37", 0, 288, W, H - 288)
+    ret("#8b8b7a", 0, 296, W, H - 296)
+    spriteC(SPR["nuna"], 196, CHAO - 21, 2)
+    spriteC(SPR["tutiBaixo0"], 234, CHAO - 17, 2)
+    spriteC(SPR["carroLado"], 380, CHAO - 12, 2)
+
+    texto(trans.titulo, W / 2, 60, 26, "#f7c948")
+    painel(50, 110, 380, 62, "#f2a3c7")
+    texto(trans.l1, W / 2, 120, 14, "#ffffff")
+    texto(trans.l2, W / 2, 142, 14, "#f2a3c7")
+    painel(140, 196, 200, 28)
+    texto("PONTOS: " + str(int(jogo.pontos)), W / 2, 202, 15, "#f7c948")
+
+    if int(jogo.t * 2) % 2 == 0:
+        texto("APERTE " + txAcao(), W / 2, 336, 15, "#f7c948")
+
+def tremer(f=0.35):
+    jogo.tremor = max(jogo.tremor, f)
+
+def perderVida():
+    jogo.vidas -= 1
+    SFX.dano()
+    tremer(0.4)
+    if jogo.vidas <= 0:
+        SFX.fim()
+        trocarEstado("GAMEOVER")
+        return True
+    return False
+
+# ==========================================================================
+# MINI-FASE — A MANHÃ EM CASA
+# ==========================================================================
+TAREFAS = [
+    dict(titulo="HORA DE ACORDAR!", dica="APERTE %A SEM PARAR!"),
+    dict(titulo="CAFÉ DA MANHÃ!", dica="USE ← → PRA PEGAR A COMIDA"),
+    dict(titulo="ESCOVAR OS DENTES!", dica="USE ← → PRA ESFREGAR"),
+    dict(titulo="SE ARRUMAR PRA SAIR!", dica="← → PRA ANDAR, %A PRA VESTIR"),
+]
+
+ROUPAS = [
+    dict(chave="camiseta", spr="camiseta", nome="CAMISETA", x=108),
+    dict(chave="calca", spr="calca", nome="CALÇA", x=196),
+    dict(chave="tenis", spr="tenis", nome="TÊNIS", x=284),
+    dict(chave="mochila", spr="mochila", nome="MOCHILA", x=372),
+]
+
+COMIDAS = ["pao", "leite", "banana", "bolacha"]
+
+f0 = NS()
+
+def iniciarManha():
+    f0.tarefa = -1
+    f0.tt = 0.0
+    f0.fim = 0.0
+    f0.prog = 0.0
+    f0.msg = ""
+    f0.vestido = dict(camiseta=False, calca=False, tenis=False, mochila=False)
+    f0.tutiX = 240.0
+    f0.caindo = []
+    f0.pegos = 0
+    f0.tCai = 0.6
+    f0.dentes = [1.0] * CONFIG["dentesQtd"]
+    f0.escova = 240.0
+    f0.espuma = []
+    f0.pior = None
+    f0.olhando = 1
+    f0.andando = False
+    f0.perto = None
+    trocarEstado("MANHA")
+
+def corTuti():
+    v = f0.vestido if hasattr(f0, "vestido") else {}
+    r = {}
+    if not v.get("camiseta"):
+        r["g"] = "#b9c2d6"
+        r["G"] = "#8d97ad"
+    if not v.get("calca"):
+        r["A"] = "#d3d8e6"
+    if not v.get("tenis"):
+        r["S"] = "#f3c39a"
+    if not v.get("mochila"):
+        r["a"] = "#3fa34d" if v.get("camiseta") else "#b9c2d6"
+    return r
+
+def terminarTarefa(msg):
+    f0.fim = 1.6
+    f0.msg = msg
+    SFX.fase()
+
+def proximaTarefa():
+    f0.tarefa += 1
+    f0.tt = 0.0
+    f0.fim = 0.0
+    f0.prog = 0.0
+    f0.msg = ""
+
+def atualizarManha(dt):
+    f0.tt += dt
+
+    if f0.fim > 0:
+        f0.fim -= dt
+        if f0.fim <= 0:
+            proximaTarefa()
+        return
+
+    if f0.tarefa == -1:
+        if f0.tt > 0.5 and foiApertada("Space"):
+            proximaTarefa()
+        return
+    if f0.tarefa >= len(TAREFAS):
+        if f0.tt > 0.5 and foiApertada("Space"):
+            iniciarFase1()
+        return
+
+    v = CONFIG["velQuarto"] * dt
+
+    if f0.tarefa == 0:
+        # ---- ACORDAR ----
+        f0.prog = max(0.0, f0.prog - CONFIG["acordarQueda"] * dt)
+        if foiApertada("Space"):
+            f0.prog = min(100.0, f0.prog + CONFIG["acordarPorAperto"])
+            SFX.coleta()
+        if f0.prog >= 100:
+            terminarTarefa("BOM DIA, " + CONFIG["nomeMenino"] + "!")
+
+    elif f0.tarefa == 1:
+        # ---- CAFÉ ----
+        if teclas.get("ArrowLeft"):
+            f0.tutiX -= v * 1.5
+        if teclas.get("ArrowRight"):
+            f0.tutiX += v * 1.5
+        f0.tutiX = max(60, min(420, f0.tutiX))
+
+        f0.tCai -= dt
+        if f0.tCai <= 0 and f0.pegos + len(f0.caindo) < CONFIG["cafeMeta"]:
+            f0.caindo.append(NS(
+                x=70 + random.random() * 340,
+                y=HUD_H - 20.0,
+                tipo=random.choice(COMIDAS),
+                pego=False,
+            ))
+            f0.tCai = CONFIG["cafeIntervalo"]
+        for c in f0.caindo:
+            c.y += CONFIG["cafeQueda"] * dt
+            if (not c.pego) and 248 < c.y < 284 and abs(c.x - f0.tutiX) < 26:
+                c.pego = True
+                f0.pegos += 1
+                jogo.pontos += 30
+                SFX.item()
+        f0.caindo = [c for c in f0.caindo if not c.pego and c.y < H + 20]
+        f0.prog = f0.pegos / CONFIG["cafeMeta"] * 100
+        if f0.pegos >= CONFIG["cafeMeta"]:
+            terminarTarefa("QUE DELÍCIA!")
+
+    elif f0.tarefa == 2:
+        # ---- DENTES ----
+        if teclas.get("ArrowLeft"):
+            f0.escova -= CONFIG["velEscova"] * dt
+        if teclas.get("ArrowRight"):
+            f0.escova += CONFIG["velEscova"] * dt
+        x0, larguraDente = 90, 300 / CONFIG["dentesQtd"]
+        f0.escova = max(x0, min(x0 + 300, f0.escova))
+
+        i = max(0, min(CONFIG["dentesQtd"] - 1, int((f0.escova - x0) / larguraDente)))
+        antes = f0.dentes[i]
+        f0.dentes[i] = max(0.0, f0.dentes[i] - CONFIG["dentesForca"] * dt)
+        if antes > 0 and f0.dentes[i] < antes:
+            for _n in range(2):
+                f0.espuma.append(NS(
+                    x=f0.escova + (random.random() - 0.5) * 24, y=178.0,
+                    vx=(random.random() - 0.5) * 60, vy=-40 - random.random() * 45, vida=0.8,
+                ))
+        if antes > 0.02 and f0.dentes[i] <= 0.02:
+            SFX.coleta()
+
+        for e in f0.espuma:
+            e.x += e.vx * dt
+            e.y += e.vy * dt
+            e.vy += 130 * dt
+            e.vida -= dt
+        f0.espuma = [e for e in f0.espuma if e.vida > 0]
+
+        limpos = sum(1 for d in f0.dentes if d <= 0.02)
+        f0.prog = limpos / CONFIG["dentesQtd"] * 100
+        f0.pior = None
+        melhorDist = float("inf")
+        for n in range(len(f0.dentes)):
+            if f0.dentes[n] <= 0.02:
+                continue
+            d = abs(x0 + n * larguraDente + larguraDente / 2 - f0.escova)
+            if d < melhorDist:
+                melhorDist = d
+                f0.pior = n
+        if limpos == CONFIG["dentesQtd"]:
+            terminarTarefa("QUE SORRISO LINDO!")
+
+    elif f0.tarefa == 3:
+        # ---- VESTIR ----
+        if teclas.get("ArrowLeft"):
+            f0.tutiX -= v
+            f0.olhando = -1
+        if teclas.get("ArrowRight"):
+            f0.tutiX += v
+            f0.olhando = 1
+        f0.tutiX = max(60, min(420, f0.tutiX))
+        f0.andando = bool(teclas.get("ArrowLeft") or teclas.get("ArrowRight"))
+
+        perto = None
+        for p in ROUPAS:
+            if not f0.vestido[p["chave"]] and abs(p["x"] - f0.tutiX) < 28:
+                perto = p
+                break
+        f0.perto = perto
+        if perto and foiApertada("Space"):
+            f0.vestido[perto["chave"]] = True
+            jogo.pontos += 50
+            SFX.item()
+        postas = sum(1 for p in ROUPAS if f0.vestido[p["chave"]])
+        f0.prog = postas / len(ROUPAS) * 100
+        if postas == len(ROUPAS):
+            terminarTarefa("TÁ PRONTO PRA ESCOLA!")
+
+# ---------- cenários ----------
+def desenharQuarto(claro):
+    ret("#4a6fa5" if claro else "#22304d", 0, 0, W, 300)
+    ret("#3b5c8a" if claro else "#1b2740", 0, 292, W, 8)
+    ret("#a9713e" if claro else "#5b3a1a", 0, 300, W, H - 300)
+    cor_tabua = "#8b5a2b" if claro else "#472d15"
+    for x in range(0, W, 40):
+        ret(cor_tabua, x, 300, 2, H - 300)
+
+    # janela com o carro da tia esperando
+    vx, vy, vw, vh = 322, 92, 104, 80
+    ret("#5b3a1a", 316, 86, 116, 92)
+    ret("#7fc4ff" if claro else "#101936", vx, vy, vw, vh)
+    if not claro:
+        for i in range(8):
+            ret("#f7c948", vx + (i * 41) % 96, vy + (i * 19) % 40, 2, 2)
+    ret("#2c5f37" if claro else "#1b3a26", vx, vy + 50, vw, vh - 50)
+    ret("#3a3f4c" if claro else "#22252f", vx, vy + 58, vw, 18)
+    spriteC(SPR["carroLado"], vx + 52, vy + 62, 1)
+    if not claro:
+        ret("#fff2b0", vx + 65, vy + 60, 8, 3)
+    ret("#5b3a1a", vx + vw / 2 - 2, vy, 4, 44)
+    ret("#5b3a1a", vx, vy + 42, vw, 4)
+
+    # pôster da escola
+    ret("#f7c948", 40, 86, 76, 56)
+    ret("#d9463c", 44, 90, 68, 48)
+    texto("EU AMO", 78, 98, 9, "#f7c948")
+    texto("A ESCOLA", 78, 114, 9, "#f7c948")
+
+    # cama
+    ret("#8b5a2b", 34, 240, 180, 76)
+    ret("#a9713e", 34, 240, 180, 8)
+    ret("#6b421d", 34, 308, 180, 8)
+    ret("#ffffff", 42, 248, 62, 32)
+    ret("#3fa34d", 104, 248, 102, 44)
+    ret("#276b32", 104, 278, 102, 10)
+
+    # mesinha
+    ret("#5b3a1a", 240, 262, 48, 54)
+    ret("#8b5a2b", 234, 256, 60, 8)
+    ret("#472d15", 248, 282, 32, 4)
+
+def desenharCozinha():
+    ret("#e8dcc0", 0, 0, W, 328)
+    for x in range(0, W, 40):
+        linha("#d3c5a4", x, HUD_H, x, 320)
+    for y in range(HUD_H, 320, 40):
+        linha("#d3c5a4", 0, y, W, y)
+
+    ret("#8b5a2b", 30, 62, 152, 64)
+    ret("#a9713e", 34, 66, 70, 56)
+    ret("#a9713e", 108, 66, 70, 56)
+    ret("#f7c948", 96, 90, 6, 8)
+    ret("#f7c948", 110, 90, 6, 8)
+
+    ret("#8b5a2b", 324, 252, 130, 12)
+    ret("#6b421d", 334, 264, 10, 56)
+    ret("#6b421d", 434, 264, 10, 56)
+    ret("#ffffff", 370, 236, 20, 16)
+    ret("#c8c2ad", 390, 240, 6, 8)
+
+    ret("#a9713e", 0, 320, W, 8)
+    ret("#b8a98a", 0, 328, W, H - 328)
+    for x in range(0, W, 48):
+        ret("#a2937a", x, 328, 2, H - 328)
+
+def desenharBanheiro():
+    ret("#bfe3ef", 0, 0, W, H)
+    for x in range(0, W, 32):
+        linha("#a5d2e0", x, HUD_H, x, H)
+    for y in range(HUD_H, H, 32):
+        linha("#a5d2e0", 0, y, W, y)
+    ret("#a9afc0", 232, 268, 8, 26)
+    ret("#a9afc0", 232, 288, 26, 7)
+    ret("#ffffff", 150, 300, 180, 44)
+    ret("#dfe8ec", 158, 306, 164, 22)
+    ret("#c8d4da", 228, 316, 24, 6)
+
+def desenharBoca():
+    x0, w, y0, h = 90, 300, 120, 110
+    ret("#12131a", x0 - 12, y0 - 12, w + 24, h + 24)
+    ret("#d9463c", x0 - 8, y0 - 8, w + 16, h + 16)
+    ret("#7a1f1a", x0, y0, w, h)
+    ld = w / CONFIG["dentesQtd"]
+    for i in range(CONFIG["dentesQtd"]):
+        suj = f0.dentes[i]
+        r = round(255 - 8 * (1 - suj))
+        g = round(255 - 40 * suj)
+        b = round(255 - 130 * suj)
+        pygame.draw.rect(alvo, (r, g, b), (int(x0 + i * ld + 2), y0 + 2, int(ld - 4), 40))
+        pygame.draw.rect(alvo, (r, g, b), (int(x0 + i * ld + 2), y0 + h - 42, int(ld - 4), 40))
+        ret_borda("#c8c2ad", x0 + i * ld + 3, y0 + 3, ld - 6, 38, 2)
+        ret_borda("#c8c2ad", x0 + i * ld + 3, y0 + h - 41, ld - 6, 38, 2)
+    if f0.pior is not None and f0.dentes[f0.pior] > 0.02 and int(jogo.t * 5) % 2 == 0:
+        sx = x0 + f0.pior * ld + ld / 2
+        ret("#f7c948", sx - 10, y0 - 34, 20, 8)
+        ret("#f7c948", sx - 6, y0 - 26, 12, 6)
+        ret("#f7c948", sx - 3, y0 - 20, 6, 6)
+
+def desenharManha():
+    tarefa = f0.tarefa
+
+    if tarefa == -1:
+        desenharQuarto(False)
+        sprite(SPR["tutiDormindo"], 50, 250, 3)
+        tremida = math.sin(jogo.t * 30) * 3
+        spriteC(SPR["despertador"], 264 + tremida, 242, 2)
+        texto("RIIING!", 264, 208, 13, "#f7c948")
+
+        painel(0, 44, W, 36)
+        texto("A MANHÃ DO " + CONFIG["nomeMenino"], W / 2, 52, 20, "#f7c948")
+
+        painel(128, 96, 176, 66, "#f2a3c7")
+        texto(CONFIG["nomeTia"] + ", LÁ FORA:", 216, 102, 10, "#f2a3c7")
+        texto('"BI BI! ' + CONFIG["nomeMenino"] + "!", 216, 120, 12)
+        texto("ACORDA QUE HOJE", 216, 134, 11)
+        texto('TEM ESCOLA!"', 216, 146, 11)
+
+        if int(jogo.t * 2) % 2 == 0:
+            texto("APERTE " + txAcao() + " PRA COMEÇAR", W / 2, 334, 14, "#f7c948")
+        return
+
+    if tarefa >= len(TAREFAS):
+        # cena final: saindo de casa
+        fundoNoite()
+        CHAO = 322
+        ret("#2c5f37", 0, 290, W, H - 290)
+        ret("#3a3f4c", 0, 300, W, 42)
+        ret("#8b8b7a", 0, 294, W, 6)
+        ret("#d9cfae", 20, 168, 130, 126)
+        ret("#a8402f", 10, 150, 150, 22)
+        ret("#5b3a1a", 58, 224, 46, 70)
+        ret("#2b1a0c", 64, 230, 34, 64)
+        ret("#7fc4ff", 112, 190, 26, 24)
+        spriteC(SPR["carroLado"], 356, CHAO - 12, 2)
+        spriteC(SPR["nuna"], 262, CHAO - 21, 2)
+        spriteC(SPR["tutiBaixo0"], 150, CHAO - 17, 2)
+
+        texto("PRONTO PRA ESCOLA!", W / 2, HUD_H + 10, 22, "#f7c948")
+        painel(70, 96, 340, 48, "#f2a3c7")
+        texto('"BORA, ' + CONFIG["nomeMenino"] + '! ENTRA NO CARRO', W / 2, 102, 12, "#f2a3c7")
+        texto('QUE A GENTE TÁ ATRASADO!"', W / 2, 118, 12, "#f2a3c7")
+        if int(jogo.t * 2) % 2 == 0:
+            texto(txAcao() + " = COMEÇAR A CORRIDA", W / 2, 332, 14, "#ffffff")
+        return
+
+    if tarefa == 0:
+        claro = f0.prog > 55
+        desenharQuarto(claro)
+        tremida = math.sin(jogo.t * 30) * 3 if f0.prog < 100 else 0
+        spriteC(SPR["despertador"], 264 + tremida, 242, 2)
+
+        if f0.prog < 30:
+            sprite(SPR["tutiDormindo"], 50, 250, 3)
+            texto("ZZZzzz...", 150, 212, 14, "#c8c2ad")
+        elif f0.prog < 62:
+            sprite(SPR["tutiDormindo"], 50, 250, 3, {"k": "#f3c39a"})
+            ret("#12131a", 50 + 3 * 3, 250 + 3 * 3, 3, 3)
+            ret("#12131a", 50 + 7 * 3, 250 + 3 * 3, 3, 3)
+            texto("HMMM...?", 150, 212, 14, "#f7c948")
+        elif f0.prog < 100:
+            spriteC(SPR["tutiBaixo0"], 92, 236, 3, corTuti())
+            texto("QUASE LÁ!", 200, 200, 15, "#f7c948")
+        else:
+            spriteC(SPR["tutiBaixo0"], 150, 274, 3, corTuti())
+
+    elif tarefa == 1:
+        desenharCozinha()
+        for c in f0.caindo:
+            spriteC(SPR[c.tipo], c.x, c.y, 2)
+        spriteC(SPR["tutiBaixo0"], f0.tutiX, 302, 3, corTuti())
+        spriteC(SPR["prato"], f0.tutiX, 266, 3)
+        painel(W / 2 - 64, 332, 128, 24)
+        texto("CAFÉ: %d/%d" % (f0.pegos, CONFIG["cafeMeta"]), W / 2, 338, 13, "#f7c948")
+
+    elif tarefa == 2:
+        desenharBanheiro()
+        desenharBoca()
+        for e in f0.espuma:
+            ret("#ffffff", int(e.x), int(e.y), 4, 4)
+        balanco = math.sin(jogo.t * 22) * 3
+        spriteC(SPR["escova"], f0.escova + balanco, 175, 3)
+        spriteC(SPR["tutiBaixo0"], 54, 296, 3, corTuti())
+
+    elif tarefa == 3:
+        desenharQuarto(True)
+        for p in ROUPAS:
+            if f0.vestido[p["chave"]]:
+                continue
+            flut = math.sin(jogo.t * 3 + p["x"]) * 2
+            ret("#5d6272", p["x"] - 2, 186, 4, 10)
+            spriteC(SPR[p["spr"]], p["x"], 212 + flut, 3)
+            if f0.perto is p and int(jogo.t * 5) % 2 == 0:
+                ret("#f7c948", p["x"] - 3, 238, 6, 8)
+                ret("#f7c948", p["x"] - 7, 234, 14, 5)
+        q = int(jogo.t * 8) % 2 if f0.andando else 0
+        spriteC(SPR["tutiLado1"] if q else SPR["tutiLado0"], f0.tutiX, 300, 3, corTuti(), f0.olhando == -1)
+        if f0.perto:
+            painel(f0.tutiX - 46, 248, 92, 22, "#f7c948")
+            texto(txAcao() + "!", f0.tutiX, 252, 12, "#f7c948")
+
+    if f0.fim > 0:
+        ret_alpha((9, 11, 20, 140), 0, 0, W, H)
+        painel(50, 150, 380, 56)
+        texto(f0.msg, W / 2, 166, 22, "#f7c948")
+
+    desenharHudManha()
+
+def desenharHudManha():
+    painel(0, 0, W, HUD_H)
+    t = TAREFAS[f0.tarefa]
+    texto("TAREFA %d/%d" % (f0.tarefa + 1, len(TAREFAS)), 10, 6, 10, "#f3c39a", "left")
+    texto(t["titulo"], 10, 20, 15, "#f7c948", "left")
+    texto(t["dica"].replace("%A", txAcao()), 470, 6, 10, "#c8c2ad", "right")
+    barra(300, 20, 170, 16, f0.prog / 100, "#3fa34d")
+
+
+# ==========================================================================
+# FASE 1 — A CORRIDA PRA ESCOLA (e a volta, fase 5)
+# ==========================================================================
+ESTRADA_X0, ESTRADA_X1 = 80, 400
+FAIXAS = [120, 200, 280, 360]
+SLOTS = [120, 180, 240, 300, 360]
+
+TRECHOS = [
+    dict(nome="BAIRRO", aviso="SAINDO DE CASA!",
+         grama="#2c5f37", asfalto="#3a3f4c", faixa="#f0e6c0",
+         deco="casa", ritmo=1.3, chuva=False,
+         pesos=[("cone", 0.55), ("poca", 0.25), ("carro", 0.20)]),
+    dict(nome="AVENIDA", aviso="AVENIDA MOVIMENTADA!",
+         grama="#4d5261", asfalto="#33384a", faixa="#f0e6c0",
+         deco="predio", ritmo=0.92, chuva=False,
+         pesos=[("cone", 0.20), ("poca", 0.15), ("carro", 0.65)]),
+    dict(nome="RUA DA ESCOLA", aviso="CHUVA! CUIDADO COM AS POÇAS!",
+         grama="#38553f", asfalto="#2c3242", faixa="#d9cfae",
+         deco="arvore", ritmo=1.05, chuva=True,
+         pesos=[("cone", 0.25), ("poca", 0.50), ("carro", 0.25)]),
+]
+
+TRECHOS_VOLTA = [
+    dict(nome="SAINDO DA ESCOLA", aviso="VALENDO! ULTRAPASSA ELES!",
+         grama="#4a6b3f", asfalto="#4a4438", faixa="#f0e6c0",
+         deco="arvore", ritmo=1.15, chuva=False,
+         pesos=[("cone", 0.45), ("poca", 0.30), ("carro", 0.25)]),
+    dict(nome="AVENIDA", aviso="AVENIDA CHEIA! CUIDADO!",
+         grama="#6b5a48", asfalto="#453b30", faixa="#f0e6c0",
+         deco="predio", ritmo=0.9, chuva=False,
+         pesos=[("cone", 0.20), ("poca", 0.15), ("carro", 0.65)]),
+    dict(nome="CHEGANDO EM CASA", aviso="TÁ QUASE! ACELERA!",
+         grama="#4a5240", asfalto="#37333f", faixa="#d9cfae",
+         deco="casa", ritmo=1.0, chuva=False,
+         pesos=[("cone", 0.40), ("poca", 0.25), ("carro", 0.35)]),
+]
+
+RIVAIS_COR = [
+    {"d": "#c9503a", "c": "#f0b8a8"},
+    {"d": "#3fa34d", "c": "#a8e0b0"},
+    {"d": "#7a5ac9", "c": "#c8b8f0"},
+]
+
+AMIGOS = [
+    dict(nome="JOÃO", cor={"g": "#f7c948", "G": "#c08f14", "H": "#12131a", "A": "#2b2f3d"}),
+    dict(nome="MARIA", cor={"g": "#f2a3c7", "G": "#c26e95", "H": "#b0793f", "A": "#3f6fd1"}),
+    dict(nome="PEDRO", cor={"g": "#7fc4ff", "G": "#3f6fd1", "H": "#7a4a24", "A": "#2b2f3d"}),
+]
+
+f1 = NS(amigos=[], rivais=[], volta=False)
+
+def trechosDaFase():
+    return TRECHOS_VOLTA if f1.volta else TRECHOS
+
+def trechoDe(dist):
+    t = trechosDaFase()
+    return min(len(t) - 1, int(dist / (CONFIG["distTotal"] / len(t))))
+
+def posicaoNaCorrida():
+    if not f1.rivais:
+        return 1
+    return 1 + sum(1 for r in f1.rivais if r.dist > f1.dist)
+
+def ordinal(n):
+    return "%dº" % n
+
+def iniciarFase1(volta=False):
+    f1.volta = bool(volta)
+    abrirFase(
+        "FASE 5 — A CORRIDA DE VOLTA PRA CASA" if f1.volta else "FASE 2 — A CORRIDA PRA ESCOLA",
+        lambda: iniciarFase1(f1.volta),
+    )
+    f1.carroX = 240.0
+    f1.carroY = 280.0
+    f1.vel = CONFIG["velBase"]
+    f1.dist = 0.0
+    f1.combustivel = float(CONFIG["combustivelMax"])
+    f1.obstaculos = []
+    f1.coletaveis = []
+    f1.tSpawn = 1.2
+    f1.tItem = 2.0
+    f1.invenc = 0.0
+    f1.turbo = 0.0
+    f1.turboCd = 0.0
+    f1.chegou = False
+    f1.chegouT = 0.0
+    f1.aviso = ""
+    f1.avisoT = 0.0
+    f1.trecho = 0
+    f1.posFinal = 1
+
+    f1.amigos = []
+    if not f1.volta:
+        pedaco = CONFIG["distTotal"] / CONFIG["amigos"]
+        for i in range(CONFIG["amigos"]):
+            f1.amigos.append(NS(
+                idx=i,
+                distAlvo=(i + 0.55) * pedaco,
+                x=FAIXAS[0] if i % 2 == 0 else FAIXAS[3],
+                y=-120.0,
+                nascido=False, pego=False, perdido=False, avisado=False,
+            ))
+
+    f1.rivais = []
+    if f1.volta:
+        for i in range(CONFIG["qtdRivais"]):
+            x0 = SLOTS[0 if i == 0 else 2 if i == 1 else 4]
+            f1.rivais.append(NS(
+                idx=i,
+                dist=60.0 + i * 40,
+                x=float(x0),
+                alvoX=float(x0),
+                vel=CONFIG["velRival"][i],
+                tFaixa=1.5 + i,
+                y=0.0,
+            ))
+    f1.melhorPos = CONFIG["qtdRivais"] + 1
+    trocarEstado("FASE1")
+
+def avisoF1(txt, dur=2):
+    f1.aviso = txt
+    f1.avisoT = dur
+
+def amigosPegos():
+    return sum(1 for a in f1.amigos if a.pego)
+
+def faixasOcupadas():
+    return [a.x for a in f1.amigos if a.nascido and not a.pego and a.y < H]
+
+def sortearTipo(pesos):
+    s = random.random()
+    for p in pesos:
+        s -= p[1]
+        if s <= 0:
+            return p[0]
+    return pesos[0][0]
+
+def nascerObstaculo():
+    t = trechosDaFase()[f1.trecho]
+    ocupadas = faixasOcupadas()
+    livres = [x for x in SLOTS if not any(abs(o - x) < 61 for o in ocupadas)]
+    if not livres:
+        return
+    prog = f1.dist / CONFIG["distTotal"]
+    quantos = 2 if prog > 0.35 and len(livres) > 3 and random.random() < 0.45 else 1
+    for _n in range(quantos):
+        if not livres:
+            break
+        x = random.choice(livres)
+        livres = [s for s in livres if abs(s - x) > 61]
+        tipo = sortearTipo(t["pesos"])
+        f1.obstaculos.append(NS(
+            tipo=tipo, x=float(x), y=-70.0,
+            velRel=-95 if tipo == "carro" else 0,
+            batido=False,
+        ))
+
+def nascerColetavel():
+    x = random.choice(FAIXAS)
+    tipo = "gasolina" if f1.combustivel < 45 or random.random() < 0.4 else "estrela"
+    f1.coletaveis.append(NS(tipo=tipo, x=float(x), y=-40.0, pego=False))
+
+def caixaObstaculo(o):
+    if o.tipo == "cone":
+        return 20, 24
+    if o.tipo == "poca":
+        return 28, 16
+    return 32, 40
+
+def bateu(ax, ay, aw, ah, bx, by, bw, bh):
+    return abs(ax - bx) * 2 < aw + bw and abs(ay - by) * 2 < ah + bh
+
+def atualizarFase1(dt):
+    # ------- chegada -------
+    if f1.chegou:
+        f1.chegouT += dt
+        f1.dist += max(0, CONFIG["velBase"] * (1 - f1.chegouT / 1.6)) * dt
+        if f1.carroY > 235:
+            f1.carroY -= 40 * dt
+        for o in f1.obstaculos:
+            o.y += 200 * dt
+        f1.obstaculos = [o for o in f1.obstaculos if o.y < H + 60]
+        if f1.chegouT > 3.4:
+            if f1.volta:
+                pos = f1.posFinal
+                jogo.pontos += 500 + [900, 500, 250, 100][pos - 1]
+                mostrarTransicao(
+                    "CHEGAMOS EM CASA!",
+                    "VOCÊ TERMINOU EM " + ordinal(pos) + " LUGAR!",
+                    "AGORA UM PEGA-PEGA NO QUINTAL!",
+                    iniciarQuintal,
+                )
+            else:
+                jogo.pontos += 500 + amigosPegos() * 200
+                SFX.fase()
+                trocarEstado("INTERVALO")
+        return
+
+    # ------- velocidade e turbo -------
+    if foiApertada("Space") and f1.turboCd <= 0:
+        f1.turbo = CONFIG["turboDur"]
+        f1.turboCd = CONFIG["turboRecarga"]
+        SFX.turbo()
+    f1.turboCd = max(0.0, f1.turboCd - dt)
+
+    vel = CONFIG["velBase"]
+    if teclas.get("ArrowUp"):
+        vel = CONFIG["velMax"]
+    elif teclas.get("ArrowDown"):
+        vel = CONFIG["velMin"]
+    if f1.turbo > 0:
+        vel = CONFIG["turboVel"]
+        f1.turbo -= dt
+    f1.vel = vel
+
+    # ------- movimento lateral -------
+    if teclas.get("ArrowLeft"):
+        f1.carroX -= CONFIG["velLateral"] * dt
+    if teclas.get("ArrowRight"):
+        f1.carroX += CONFIG["velLateral"] * dt
+    f1.carroX = max(ESTRADA_X0 + 20, min(ESTRADA_X1 - 20, f1.carroX))
+
+    # ------- distância, combustível, pontos -------
+    f1.dist += vel * dt
+    jogo.pontos += vel * dt * 0.08
+    f1.combustivel -= CONFIG["gastoCombustivel"] * dt
+    if f1.combustivel <= 0:
+        f1.combustivel = 45
+        avisoF1("ACABOU A GASOLINA!")
+        if perderVida():
+            return
+        f1.invenc = CONFIG["invencivel"]
+
+    # ------- mudou de trecho? -------
+    novoTrecho = trechoDe(f1.dist)
+    if novoTrecho != f1.trecho:
+        f1.trecho = novoTrecho
+        avisoF1(trechosDaFase()[novoTrecho]["aviso"], 2.8)
+        SFX.fase()
+
+    # ------- rivais (volta) -------
+    for r in f1.rivais:
+        atras = f1.dist - r.dist
+        ajuste = max(-CONFIG["elastico"], min(CONFIG["elastico"], atras * 0.05))
+        r.dist += (r.vel + ajuste) * dt
+
+        r.tFaixa -= dt
+        if r.tFaixa <= 0:
+            r.alvoX = float(random.choice(SLOTS))
+            r.tFaixa = 2.2 + random.random() * 2.5
+        delta = r.alvoX - r.x
+        if delta != 0:
+            r.x += math.copysign(min(abs(delta), 70 * dt), delta)
+
+        r.y = f1.carroY - (r.dist - f1.dist)
+        if f1.invenc <= 0 and bateu(f1.carroX, f1.carroY, 22, 30, r.x, r.y, 26, 34):
+            f1.invenc = CONFIG["invencivel"]
+            avisoF1("ENCOSTOU NO OUTRO CARRO!")
+            if perderVida():
+                return
+    if f1.volta:
+        pos = posicaoNaCorrida()
+        if pos < f1.melhorPos:
+            f1.melhorPos = pos
+            if pos == 1:
+                avisoF1("TÁ EM PRIMEIRO!", 1.8)
+
+    # ------- coleguinhas no ponto -------
+    for a in f1.amigos:
+        if a.pego or a.perdido:
+            continue
+        if not a.avisado and f1.dist >= a.distAlvo - CONFIG["avisoAmigo"]:
+            a.avisado = True
+            avisoF1("AMIGO NO PONTO À " + ("ESQUERDA" if a.x < 240 else "DIREITA") + "!", 2.6)
+            SFX.coleta()
+        if not a.nascido:
+            if f1.dist >= a.distAlvo:
+                a.nascido = True
+                a.y = -120.0
+                f1.tSpawn = max(f1.tSpawn, 1.3)
+            continue
+        a.y += vel * dt
+        if a.y > H + 60:
+            a.perdido = True
+            continue
+        if bateu(f1.carroX, f1.carroY, 40, 48, a.x, a.y, 24, 30):
+            a.pego = True
+            jogo.pontos += 150
+            SFX.item()
+            avisoF1(AMIGOS[a.idx]["nome"] + " ENTROU NO CARRO!", 2)
+
+    # ------- nascimento -------
+    f1.tSpawn -= dt
+    if f1.tSpawn <= 0:
+        nascerObstaculo()
+        prog = f1.dist / CONFIG["distTotal"]
+        f1.tSpawn = CONFIG["intervaloObstaculo"] * TRECHOS[f1.trecho]["ritmo"] * (1 - prog * 0.25) + random.random() * 0.4
+    f1.tItem -= dt
+    if f1.tItem <= 0:
+        nascerColetavel()
+        f1.tItem = CONFIG["intervaloItem"] + random.random() * 1.6
+
+    # ------- mover e colidir -------
+    f1.invenc = max(0.0, f1.invenc - dt)
+    if f1.avisoT > 0:
+        f1.avisoT -= dt
+
+    for o in f1.obstaculos:
+        o.y += (vel + o.velRel) * dt
+    f1.obstaculos = [o for o in f1.obstaculos if -220 < o.y < H + 80]
+
+    for o in f1.obstaculos:
+        if o.batido:
+            continue
+        cw, ch = caixaObstaculo(o)
+        if bateu(f1.carroX, f1.carroY, 22, 30, o.x, o.y, cw - 6, ch - 6):
+            o.batido = True
+            if f1.invenc > 0:
+                continue
+            f1.invenc = CONFIG["invencivel"]
+            avisoF1("CUIDADO COM A POÇA!" if o.tipo == "poca" else "AI! DESVIA!")
+            if perderVida():
+                return
+
+    for c in f1.coletaveis:
+        c.y += vel * dt
+    for c in f1.coletaveis:
+        if c.pego:
+            continue
+        if bateu(f1.carroX, f1.carroY, 34, 44, c.x, c.y, 22, 24):
+            c.pego = True
+            if c.tipo == "gasolina":
+                f1.combustivel = min(CONFIG["combustivelMax"], f1.combustivel + 32)
+                jogo.pontos += 20
+                SFX.coleta()
+            else:
+                jogo.pontos += 60
+                SFX.item()
+    f1.coletaveis = [c for c in f1.coletaveis if not c.pego and c.y < H + 40]
+
+    if f1.dist >= CONFIG["distTotal"]:
+        f1.chegou = True
+        f1.chegouT = 0.0
+        f1.posFinal = posicaoNaCorrida()
+
+def desenharCasaDeCima(x, y, w, h):
+    ret("#d9cfae", x, y + 24, w, h - 24)
+    ret("#c0b492", x, y + h - 12, w, 12)
+    ret("#a8402f", x - 10, y + 10, w + 20, 16)
+    ret("#c9503a", x - 6, y, w + 12, 12)
+    ret("#2b3d63", x + w / 2 - 56, y + 32, 112, 18)
+    texto("CASA DOCE CASA", x + w / 2, y + 36, 10, "#f7c948")
+    for jx in (x + 16, x + w - 46):
+        ret("#2b3d63", jx, y + 60, 30, 26)
+        ret("#f7c948", jx + 3, y + 63, 24, 20)
+    ret("#5b3a1a", x + w / 2 - 22, y + 62, 44, h - 62)
+    ret("#f7c948", x + w / 2 + 12, y + 84, 5, 5)
+
+def desenharEscola(x, y, w, h):
+    ret("#d9cfae", x, y + 26, w, h - 26)
+    ret("#c0b492", x, y + h - 14, w, 14)
+    ret("#a8402f", x - 10, y + 12, w + 20, 16)
+    ret("#c9503a", x - 6, y, w + 12, 14)
+    ret("#2b3d63", x + w / 2 - 78, y + 34, 156, 20)
+    texto(CONFIG["nomeEscola"], x + w / 2, y + 38, 12, "#f7c948")
+    for i in range(4):
+        jx = x + 14 + i * (w - 28) / 4
+        if i in (1, 2):
+            continue
+        ret("#2b3d63", jx, y + 62, 30, 26)
+        ret("#7fc4ff", jx + 3, y + 65, 24, 20)
+    ret("#2b3d63", x + w / 2 - 30, y + 60, 60, h - 60)
+    for i in range(5):
+        ret("#3f6fd1", x + w / 2 - 26 + i * 11, y + 64, 5, h - 68)
+
+def desenharDeco(tipo, x, y):
+    if tipo == "casa":
+        ret("#d9cfae", x - 22, y + 12, 44, 32)
+        ret("#a8402f", x - 26, y, 52, 14)
+        ret("#c9503a", x - 22, y + 12, 44, 5)
+        ret("#7fc4ff", x - 15, y + 22, 12, 12)
+        ret("#5b3a1a", x + 5, y + 24, 12, 20)
+    elif tipo == "predio":
+        ret("#4a4f60", x - 24, y - 26, 48, 74)
+        ret("#5d6272", x - 24, y - 26, 48, 6)
+        for a in range(4):
+            for b in range(3):
+                cor = "#f7c948" if (a + b + int(y)) % 3 == 0 else "#2a2f3d"
+                ret(cor, x - 17 + b * 14, y - 16 + a * 16, 9, 10)
+    else:
+        ret("#5b3a1a", x - 4, y + 26, 8, 18)
+        ret("#276b32", x - 20, y, 40, 30)
+        ret("#3fa34d", x - 16, y + 3, 32, 20)
+
+def desenharPonto(x, y):
+    ret("#5d6272", x - 2, y, 4, 34)
+    ret("#3f6fd1", x - 14, y - 16, 28, 18)
+    ret("#f7c948", x - 11, y - 13, 22, 12)
+    ret("#12131a", x - 8, y - 9, 16, 4)
+
+def desenharFase1():
+    tr = trechosDaFase()[f1.trecho]
+
+    alvo.set_clip(pygame.Rect(0, HUD_H, W, H - HUD_H))
+
+    ret(tr["grama"], 0, HUD_H, W, H - HUD_H)
+    ret(tr["asfalto"], ESTRADA_X0, HUD_H, ESTRADA_X1 - ESTRADA_X0, H - HUD_H)
+    off = f1.dist % 40
+    y = HUD_H - 40 + off
+    while y < H:
+        ret("#e8e8e8", ESTRADA_X0 - 8, y, 8, 20)
+        ret("#d9463c", ESTRADA_X0 - 8, y + 20, 8, 20)
+        ret("#e8e8e8", ESTRADA_X1, y, 8, 20)
+        ret("#d9463c", ESTRADA_X1, y + 20, 8, 20)
+        y += 40
+    for dx in (160, 240, 320):
+        y = HUD_H - 60 + (f1.dist % 60)
+        while y < H:
+            ret(tr["faixa"], dx - 2, y, 4, 28)
+            y += 60
+    offA = f1.dist % 130
+    y = HUD_H - 130 + offA
+    while y < H + 80:
+        desenharDeco(tr["deco"], 36, y)
+        desenharDeco(tr["deco"], 444, y)
+        y += 130
+
+    if f1.chegou:
+        p = min(1.0, f1.chegouT / 1.7)
+        ey = -250 + p * 300
+        if f1.volta:
+            desenharCasaDeCima(110, ey + 20, 260, 170)
+        else:
+            desenharEscola(70, ey, 340, 190)
+
+    for r in f1.rivais:
+        if r.y < -70 or r.y > H + 70:
+            continue
+        spriteC(SPR["carro"], r.x, r.y, 2, RIVAIS_COR[r.idx])
+
+    for a in f1.amigos:
+        if not a.nascido or a.pego or a.y > H + 40:
+            continue
+        desenharPonto(ESTRADA_X0 - 32 if a.x < 240 else ESTRADA_X1 + 32, a.y - 24)
+        pulo = abs(math.sin(jogo.t * 6)) * 3
+        spriteC(SPR["tutiBaixo0"], a.x, a.y - pulo, 2, AMIGOS[a.idx]["cor"])
+        if int(jogo.t * 6) % 2 == 0:
+            ret("#f7c948", a.x - 5, a.y - 34, 10, 5)
+            ret("#f7c948", a.x - 2, a.y - 29, 4, 5)
+
+    for c in f1.coletaveis:
+        spriteC(SPR["gasolina" if c.tipo == "gasolina" else "estrela"], c.x, c.y, 2)
+
+    for o in f1.obstaculos:
+        if o.tipo == "cone":
+            spriteC(SPR["cone"], o.x, o.y, 2)
+        elif o.tipo == "poca":
+            spriteC(SPR["poca"], o.x, o.y, 2)
+        else:
+            spriteC(SPR["carroFrente"], o.x, o.y, 2, {"d": "#c9503a", "c": "#f0b8a8"})
+
+    if f1.turbo > 0:
+        for i in range(5):
+            ret("#f7c948" if i % 2 else "#e8853a",
+                f1.carroX - 12 + random.random() * 24, f1.carroY + 22 + i * 7, 5, 6)
+
+    piscando = f1.invenc > 0 and int(f1.invenc * 12) % 2 == 0
+    if not piscando:
+        spriteC(SPR["carro"], f1.carroX, f1.carroY, 2)
+
+    if tr["chuva"]:
+        ret_alpha((96, 132, 200, 40), 0, HUD_H, W, H - HUD_H)
+        for i in range(70):
+            x = (i * 71 + f1.dist * 0.6) % W
+            yy = HUD_H + ((i * 47 + f1.dist * 2.6) % (H - HUD_H))
+            ret_alpha((190, 225, 255, 140), int(x), int(yy), 1, 8)
+
+    if f1.avisoT > 0:
+        lt = medir(f1.aviso, 16) + 24
+        painel(W / 2 - lt / 2, 112, lt, 28)
+        texto(f1.aviso, W / 2, 118, 16, "#f7c948")
+
+    if f1.chegou:
+        n = 0
+        for a in f1.amigos:
+            if not a.pego:
+                continue
+            spriteC(SPR["tutiBaixo0"], f1.carroX + 34 + n * 26, f1.carroY + 6, 2, AMIGOS[a.idx]["cor"])
+            n += 1
+        texto("CHEGAMOS EM CASA!" if f1.volta else "CHEGAMOS NA ESCOLA!", W / 2, 250, 20, "#f7c948")
+    elif f1.turboCd <= 0:
+        texto(txAcao() + " = TURBO!", W / 2, H - 26, 12, "#f7c948")
+
+    alvo.set_clip(None)
+    desenharHudFase1()
+
+def desenharCoracoes(x, y):
+    for i in range(CONFIG["vidas"]):
+        cheio = i < jogo.vidas
+        sprite(SPR["coracao"], x + i * 18, y, 2, None if cheio else {"r": "#3a3f4c"})
+
+def desenharHudFase1():
+    painel(0, 0, W, HUD_H)
+    desenharCoracoes(10, 16)
+
+    texto("GASOLINA", 82, 5, 10, "#f3c39a", "left")
+    frac = f1.combustivel / CONFIG["combustivelMax"]
+    barra(82, 19, 116, 16, frac, "#d9463c" if frac < 0.25 else "#3fa34d")
+
+    texto(trechosDaFase()[f1.trecho]["nome"], 210, 5, 10, "#f3c39a", "left")
+    barra(210, 19, 110, 16, f1.dist / CONFIG["distTotal"], "#f7c948")
+
+    if f1.volta:
+        pos = f1.posFinal if f1.chegou else posicaoNaCorrida()
+        texto("LUGAR", 332, 5, 10, "#f3c39a", "left")
+        texto(ordinal(pos), 332, 17, 20, "#f7c948" if pos == 1 else "#ffffff", "left")
+    else:
+        texto("AMIGOS", 332, 5, 10, "#f3c39a", "left")
+        for i in range(len(f1.amigos)):
+            sprite(SPR["carinha"], 332 + i * 17, 20, 2, AMIGOS[i]["cor"] if f1.amigos[i].pego else CINZA)
+
+    texto("PONTOS", 470, 4, 10, "#f3c39a", "right")
+    texto(str(int(jogo.pontos)).zfill(6), 470, 17, 18, "#f7c948", "right")
+
+
+# ==========================================================================
+# FASE 2 — DESAFIOS NA ESCOLA
+# ==========================================================================
+TILE = 24
+MAPA_Y = 48
+MAPA = [
+    "####################",
+    "#..................#",
+    "#.###.####.###.###.#",
+    "#.###....#.###.###.#",
+    "#.###.####.###.###.#",
+    "#..................#",
+    "#.###.####.###.....#",
+    "#.###.####.....###.#",
+    "#.###.####.###.###.#",
+    "#..................#",
+    "#.....####.###.###.#",
+    "#..................#",
+    "####################",
+]
+MAPA_COLS = len(MAPA[0])
+MAPA_ROWS = len(MAPA)
+
+POS = dict(
+    inicio=dict(c=1, r=1),
+    nuna=dict(c=5, r=5),
+    porta=dict(c=18, r=11),
+    lapis=dict(c=8, r=3),
+    chave=dict(c=16, r=6),
+    mochila=dict(c=12, r=7),
+    lanche=dict(c=3, r=10),
+)
+
+def cx(c):
+    return c * TILE + TILE / 2
+
+def cy(r):
+    return MAPA_Y + r * TILE + TILE / 2
+
+ITENS = [
+    dict(chave="mochila", spr="mochila", nome="MOCHILA"),
+    dict(chave="lapis", spr="lapis", nome="LÁPIS"),
+    dict(chave="lanche", spr="lanche", nome="LANCHE"),
+    dict(chave="chave", spr="chave", nome="CHAVE"),
+]
+
+f2 = NS()
+
+def iniciarFase2():
+    abrirFase("FASE 3 — DESAFIOS NA ESCOLA", iniciarFase2)
+    f2.x = cx(POS["inicio"]["c"])
+    f2.y = cy(POS["inicio"]["r"])
+    f2.dir = "baixo"
+    f2.anim = 0.0
+    f2.andando = False
+    f2.pegos = dict(mochila=False, lapis=False, lanche=False, chave=False)
+    f2.invenc = 0.0
+    f2.grito = 0.0
+    f2.gritoCd = 0.0
+    f2.msg = ""
+    f2.msgT = 0.0
+    f2.nunaFalou = False
+    f2.pertoNuna = False
+    f2.monstros = [
+        NS(eixo="h", x=cx(9), y=cy(9), min=cx(2), max=cx(17), dir=1),
+        NS(eixo="v", x=cx(10), y=cy(3), min=cy(1), max=cy(11), dir=1),
+    ]
+    trocarEstado("FASE2")
+
+def msgF2(txt, dur=2.4):
+    f2.msg = txt
+    f2.msgT = dur
+
+def paredeEm(px, py):
+    c = int(px // TILE)
+    r = int((py - MAPA_Y) // TILE)
+    if r < 0 or r >= MAPA_ROWS or c < 0 or c >= MAPA_COLS:
+        return True
+    return MAPA[r][c] == "#"
+
+def livre(px, py):
+    h = 8
+    return (not paredeEm(px - h, py - h) and not paredeEm(px + h, py - h)
+            and not paredeEm(px - h, py + h) and not paredeEm(px + h, py + h))
+
+def centroX(px):
+    return (px // TILE) * TILE + TILE / 2
+
+def centroY(py):
+    return MAPA_Y + ((py - MAPA_Y) // TILE) * TILE + TILE / 2
+
+def aproximar(v, alvo_v, passo):
+    if abs(alvo_v - v) <= passo:
+        return alvo_v
+    return v + math.copysign(passo, alvo_v - v)
+
+DIRS = {
+    "ArrowLeft": NS(dx=-1, dy=0, nome="esq"),
+    "ArrowRight": NS(dx=1, dy=0, nome="dir"),
+    "ArrowUp": NS(dx=0, dy=-1, nome="cima"),
+    "ArrowDown": NS(dx=0, dy=1, nome="baixo"),
+}
+
+def _direcao_atual():
+    for i in range(len(ordemSetas) - 1, -1, -1):
+        if teclas.get(ordemSetas[i]):
+            return DIRS[ordemSetas[i]]
+    return None
+
+def atualizarFase2(dt):
+    f2.invenc = max(0.0, f2.invenc - dt)
+    f2.gritoCd = max(0.0, f2.gritoCd - dt)
+    if f2.grito > 0:
+        f2.grito -= dt
+    if f2.msgT > 0:
+        f2.msgT -= dt
+
+    if foiApertada("Space") and f2.gritoCd <= 0:
+        f2.grito = CONFIG["gritoDur"]
+        f2.gritoCd = CONFIG["gritoRecarga"]
+        SFX.grito()
+        msgF2("GRITO DE CORAGEM!", 1.2)
+
+    # ------- movimento -------
+    d = _direcao_atual()
+    f2.andando = False
+    if d:
+        f2.dir = d.nome
+        v = CONFIG["velTuti"] * dt
+        if d.dx != 0:
+            alvo_v = centroY(f2.y)
+            if f2.y != alvo_v:
+                ny = aproximar(f2.y, alvo_v, v)
+                if livre(f2.x, ny):
+                    f2.y = ny
+                    f2.andando = True
+            if livre(f2.x + d.dx * v, f2.y):
+                f2.x += d.dx * v
+                f2.andando = True
+        else:
+            alvo_v = centroX(f2.x)
+            if f2.x != alvo_v:
+                nx = aproximar(f2.x, alvo_v, v)
+                if livre(nx, f2.y):
+                    f2.x = nx
+                    f2.andando = True
+            if livre(f2.x, f2.y + d.dy * v):
+                f2.y += d.dy * v
+                f2.andando = True
+    if f2.andando:
+        f2.anim += dt * 8
+    else:
+        f2.anim = 0.0
+
+    # ------- itens -------
+    for it in ITENS:
+        if f2.pegos[it["chave"]]:
+            continue
+        p = POS[it["chave"]]
+        if abs(f2.x - cx(p["c"])) < 18 and abs(f2.y - cy(p["r"])) < 18:
+            f2.pegos[it["chave"]] = True
+            jogo.pontos += 200
+            SFX.item()
+            msgF2("PEGOU A " + it["nome"] + "!", 1.8)
+
+    # ------- Tia Nuna -------
+    if abs(f2.x - cx(POS["nuna"]["c"])) < 30 and abs(f2.y - cy(POS["nuna"]["r"])) < 30:
+        if not f2.nunaFalou:
+            f2.nunaFalou = True
+            if jogo.vidas < CONFIG["vidas"]:
+                jogo.vidas += 1
+            SFX.coleta()
+            msgF2("A CHAVE TÁ LÁ NA DIREITA!", 3.5)
+        f2.pertoNuna = True
+    else:
+        f2.pertoNuna = False
+
+    # ------- monstrinhos -------
+    if f2.grito <= 0:
+        for m in f2.monstros:
+            v = CONFIG["velMonstro"] * dt * m.dir
+            if m.eixo == "h":
+                m.x += v
+                if m.x <= m.min:
+                    m.x = m.min
+                    m.dir = 1
+                if m.x >= m.max:
+                    m.x = m.max
+                    m.dir = -1
+            else:
+                m.y += v
+                if m.y <= m.min:
+                    m.y = m.min
+                    m.dir = 1
+                if m.y >= m.max:
+                    m.y = m.max
+                    m.dir = -1
+
+    if f2.invenc <= 0:
+        for m in f2.monstros:
+            if abs(f2.x - m.x) < 18 and abs(f2.y - m.y) < 18:
+                f2.invenc = CONFIG["invencivel"]
+                msgF2("A BAGUNÇA TE PEGOU!", 2)
+                f2.x = cx(POS["inicio"]["c"])
+                f2.y = cy(POS["inicio"]["r"])
+                f2.dir = "baixo"
+                if perderVida():
+                    return
+                break
+
+    # ------- porta -------
+    dp = abs(f2.x - cx(POS["porta"]["c"])) < 16 and abs(f2.y - cy(POS["porta"]["r"])) < 16
+    if dp:
+        if all(f2.pegos[it["chave"]] for it in ITENS):
+            jogo.pontos += 1000 + jogo.vidas * 300
+            mostrarTransicao(
+                "CHEGOU NA SALA!",
+                "AULA DADA, BARRIGA CHEIA...",
+                "AGORA É HORA DO RECREIO!",
+                iniciarRecreio,
+            )
+        elif f2.msgT <= 0:
+            msgF2("FALTA PEGAR OS ITENS!", 2)
+            SFX.porta()
+
+def desenharParede(x, y):
+    ret("#3b4a63", x, y, TILE, TILE)
+    ret("#4d6280", x, y, TILE, 4)
+    ret("#2a3548", x, y + 11, TILE, 2)
+    ret("#2a3548", x + 11, y, 2, 11)
+    ret("#2a3548", x + 5, y + 13, 2, 11)
+    ret("#2a3548", x + 17, y + 13, 2, 11)
+
+def desenharFase2():
+    ret("#151a26", 0, HUD_H, W, H - HUD_H)
+
+    for r in range(MAPA_ROWS):
+        for c in range(MAPA_COLS):
+            x, y = c * TILE, MAPA_Y + r * TILE
+            if MAPA[r][c] == "#":
+                desenharParede(x, y)
+                continue
+            ret("#c8c2ad" if (r + c) % 2 else "#b8b19a", x, y, TILE, TILE)
+
+    px = POS["porta"]["c"] * TILE
+    py = MAPA_Y + POS["porta"]["r"] * TILE
+    completo = all(f2.pegos[it["chave"]] for it in ITENS)
+    ret("#f7c948" if completo else "#8b5a2b", px + 1, py + 1, TILE - 2, TILE - 2)
+    ret("#fff2b0" if completo else "#6b421d", px + 4, py + 4, TILE - 8, 9)
+    ret("#12131a", px + TILE - 8, py + TILE / 2, 3, 3)
+    if completo and int(jogo.t * 4) % 2 == 0:
+        ret_borda("#fff2b0", px + 1, py + 1, TILE - 2, TILE - 2, 2)
+    texto("SALA", px + TILE / 2, py - 14, 10, "#f7c948" if completo else "#c8c2ad")
+
+    for it in ITENS:
+        if f2.pegos[it["chave"]]:
+            continue
+        p = POS[it["chave"]]
+        flut = math.sin(jogo.t * 3 + p["c"]) * 2
+        spriteC(SPR[it["spr"]], cx(p["c"]), cy(p["r"]) + flut, 2)
+
+    spriteC(SPR["nuna"], cx(POS["nuna"]["c"]), cy(POS["nuna"]["r"]) - 6, 2)
+
+    for m in f2.monstros:
+        tremida = math.sin(jogo.t * 40) * 2 if f2.grito > 0 else 0
+        spriteC(SPR["monstro"], m.x + tremida, m.y, 2,
+                {"c": "#7fc4ff", "w": "#dff0ff"} if f2.grito > 0 else None)
+
+    piscando = f2.invenc > 0 and int(f2.invenc * 12) % 2 == 0
+    if not piscando:
+        q = int(f2.anim) % 2
+        esp = False
+        if f2.dir == "cima":
+            spr = SPR["tutiCima1"] if q else SPR["tutiCima0"]
+        elif f2.dir == "baixo":
+            spr = SPR["tutiBaixo1"] if q else SPR["tutiBaixo0"]
+        else:
+            spr = SPR["tutiLado1"] if q else SPR["tutiLado0"]
+            esp = f2.dir == "esq"
+        spriteC(spr, f2.x, f2.y - 6, 2, None, esp)
+
+    if f2.msgT > 0:
+        larguraTxt = medir(f2.msg, 12) + 20
+        bx = max(6, min(W - larguraTxt - 6, f2.x - larguraTxt / 2))
+        by = max(HUD_H + 4, f2.y - 44)
+        painel(bx, by, larguraTxt, 22, "#f7c948")
+        texto(f2.msg, bx + larguraTxt / 2, by + 5, 12, "#ffffff")
+
+    desenharHudFase2()
+
+def desenharHudFase2():
+    painel(0, 0, W, HUD_H)
+    desenharCoracoes(10, 16)
+
+    for i, it in enumerate(ITENS):
+        x, y = 82 + i * 30, 12
+        pego = f2.pegos[it["chave"]]
+        ret_alpha((63, 163, 77, 90) if pego else (255, 255, 255, 20), x - 2, y - 2, 28, 28)
+        spriteC(SPR[it["spr"]], x + 12, y + 12, 2, None if pego else CINZA)
+
+    texto("GRITO", 214, 5, 10, "#f3c39a", "left")
+    pronto = f2.gritoCd <= 0
+    barra(214, 19, 100, 16, 1 if pronto else 1 - f2.gritoCd / CONFIG["gritoRecarga"],
+          "#f7c948" if pronto else "#5d6272")
+    if pronto and int(jogo.t * 3) % 2 == 0:
+        texto("!", 320, 18, 16, "#f7c948", "left")
+
+    texto("PONTOS", 470, 4, 10, "#f3c39a", "right")
+    texto(str(int(jogo.pontos)).zfill(6), 470, 17, 18, "#f7c948", "right")
+
+# ==========================================================================
+# FASE 4 — RECREIO: ESCONDE-ESCONDE NO PÁTIO
+# ==========================================================================
+def andarContornando(px, py, d, v, livre_fn):
+    if livre_fn(px + d.dx * v, py + d.dy * v):
+        return px + d.dx * v, py + d.dy * v, True
+    perp = [(0, -1), (0, 1)] if d.dx else [(-1, 0), (1, 0)]
+    alcance = 6
+    while alcance <= 30:
+        for pxy in perp:
+            if not livre_fn(px + pxy[0] * alcance, py + pxy[1] * alcance):
+                continue
+            if not livre_fn(px + pxy[0] * alcance + d.dx * v, py + pxy[1] * alcance + d.dy * v):
+                continue
+            mx, my = px + pxy[0] * v, py + pxy[1] * v
+            if livre_fn(mx, my):
+                return mx, my, True
+        alcance += 6
+    return px, py, False
+
+PATIO_Y = 46
+ESCONDERIJOS = [
+    dict(spr="arvore", x=72, y=132, esc=5),
+    dict(spr="arbusto", x=200, y=108, esc=4),
+    dict(spr="escorrega", x=402, y=132, esc=4),
+    dict(spr="banco", x=94, y=294, esc=4),
+    dict(spr="caixaDagua", x=248, y=308, esc=4),
+    dict(spr="arvore", x=416, y=288, esc=5),
+]
+
+PISTAS = [
+    dict(d=999, txt="TÁ GELADO...", cor="#7fc4ff"),
+    dict(d=210, txt="TÁ FRIO", cor="#7fc4ff"),
+    dict(d=150, txt="TÁ MORNO", cor="#f7c948"),
+    dict(d=95, txt="TÁ QUENTE!", cor="#e8853a"),
+    dict(d=55, txt="PEGANDO FOGO!", cor="#d9463c"),
+]
+
+f4 = NS()
+
+def iniciarRecreio():
+    abrirFase("FASE 4 — RECREIO NA ESCOLA", iniciarRecreio)
+    f4.x = 240.0
+    f4.y = 190.0
+    f4.dir = "baixo"
+    f4.anim = 0.0
+    f4.andando = False
+    f4.msg = ""
+    f4.msgT = 0.0
+    f4.tRisada = CONFIG["intervaloRisada"]
+    f4.risada = None
+    f4.risadaT = 0.0
+    f4.tempo = 0.0
+
+    indices = list(range(len(ESCONDERIJOS)))
+    random.shuffle(indices)
+    f4.locais = [NS(ref=e, i=i, amigo=-1, espiado=False) for i, e in enumerate(ESCONDERIJOS)]
+    for a in range(len(AMIGOS)):
+        f4.locais[indices[a]].amigo = a
+    f4.achados = 0
+    trocarEstado("RECREIO")
+
+def msgF4(txt, dur=1.8):
+    f4.msg = txt
+    f4.msgT = dur
+
+def livreNoPatio(px, py):
+    if px < 26 or px > W - 26 or py < PATIO_Y + 26 or py > H - 20:
+        return False
+    for l in f4.locais:
+        e = l.ref
+        lw = larg(SPR[e["spr"]]) * e["esc"] / 2
+        lh = len(SPR[e["spr"]]) * e["esc"] / 2
+        if abs(px - e["x"]) < lw - 2 and abs(py - e["y"]) < lh - 2:
+            return False
+    return True
+
+def distAte(l):
+    return math.hypot(f4.x - l.ref["x"], f4.y - l.ref["y"])
+
+def pistaAtual():
+    melhor, dist = None, float("inf")
+    for l in f4.locais:
+        if l.espiado or l.amigo < 0:
+            continue
+        d = distAte(l)
+        if d < dist:
+            dist = d
+            melhor = l
+    return melhor, dist
+
+def atualizarRecreio(dt):
+    f4.tempo += dt
+    if f4.msgT > 0:
+        f4.msgT -= dt
+    if f4.risadaT > 0:
+        f4.risadaT -= dt
+    else:
+        f4.risada = None
+
+    # ------- andar -------
+    d = _direcao_atual()
+    f4.andando = False
+    if d:
+        f4.dir = d.nome
+        f4.x, f4.y, f4.andando = andarContornando(f4.x, f4.y, d, CONFIG["velRecreio"] * dt, livreNoPatio)
+    f4.anim = f4.anim + dt * 8 if f4.andando else 0.0
+
+    # ------- espiar -------
+    if foiApertada("Space"):
+        alvo_l, dist = None, float("inf")
+        for l in f4.locais:
+            dd = distAte(l)
+            if dd < dist:
+                dist = dd
+                alvo_l = l
+        if not alvo_l or dist > CONFIG["alcanceEspiar"]:
+            msgF4("CHEGA MAIS PERTO DE UM ESCONDERIJO!")
+        elif alvo_l.espiado:
+            msgF4("JÁ OLHEI AQUI!")
+        else:
+            alvo_l.espiado = True
+            if alvo_l.amigo >= 0:
+                f4.achados += 1
+                jogo.pontos += 250
+                SFX.item()
+                msgF4("ACHOU O " + AMIGOS[alvo_l.amigo]["nome"] + "!", 2.2)
+                if f4.achados == len(AMIGOS):
+                    jogo.pontos += 400
+                    mostrarTransicao(
+                        "ACHOU TODO MUNDO!",
+                        "O RECREIO ACABOU E A AULA TAMBÉM!",
+                        "A " + CONFIG["nomeTia"] + " JÁ TÁ NO PORTÃO PRA BUSCAR!",
+                        lambda: iniciarFase1(True),
+                    )
+                    return
+            else:
+                SFX.porta()
+                msgF4("NINGUÉM AQUI!")
+
+    # ------- risadinha -------
+    f4.tRisada -= dt
+    if f4.tRisada <= 0:
+        local, _dist = pistaAtual()
+        f4.tRisada = CONFIG["intervaloRisada"]
+        if local:
+            f4.risada = local
+            f4.risadaT = 1.1
+            SFX.coleta()
+
+def desenharRecreio():
+    ret("#3d7a49", 0, PATIO_Y, W, H - PATIO_Y)
+    for y in range(PATIO_Y, H, 26):
+        ret("#357040", 0, y, W, 3)
+    ret("#a9a897", 150, 150, 200, 130)
+    ret_borda("#e8e8e8", 160, 160, 180, 110, 2)
+    circulo("#e8e8e8", 250, 215, 26, 2)
+
+    ret("#c0b492", 0, PATIO_Y, W, 22)
+    ret("#a8402f", 0, PATIO_Y, W, 6)
+
+    for l in f4.locais:
+        e = l.ref
+        spriteC(SPR[e["spr"]], e["x"], e["y"], e["esc"])
+        if l.espiado:
+            cor = "#3fa34d" if l.amigo >= 0 else "#d9463c"
+            r = 12
+            linha(cor, e["x"] - r, e["y"] - r, e["x"] + r, e["y"] + r, 3)
+            linha(cor, e["x"] + r, e["y"] - r, e["x"] - r, e["y"] + r, 3)
+        if l.espiado and l.amigo >= 0:
+            spriteC(SPR["tutiBaixo0"], e["x"] + 26, e["y"] + 10, 2, AMIGOS[l.amigo]["cor"])
+        if f4.risada is l and f4.risadaT > 0:
+            painel(e["x"] - 26, e["y"] - 44, 52, 20, "#f7c948")
+            texto("HIHI!", e["x"], e["y"] - 40, 11, "#f7c948")
+
+    q = int(f4.anim) % 2
+    esp = False
+    if f4.dir == "cima":
+        spr = SPR["tutiCima1"] if q else SPR["tutiCima0"]
+    elif f4.dir == "baixo":
+        spr = SPR["tutiBaixo1"] if q else SPR["tutiBaixo0"]
+    else:
+        spr = SPR["tutiLado1"] if q else SPR["tutiLado0"]
+        esp = f4.dir == "esq"
+    spriteC(spr, f4.x, f4.y, 2, None, esp)
+
+    perto, dp = None, float("inf")
+    for l in f4.locais:
+        dd = distAte(l)
+        if dd < dp:
+            dp = dd
+            perto = l
+    if perto and dp <= CONFIG["alcanceEspiar"] and not perto.espiado:
+        painel(f4.x - 46, f4.y - 46, 92, 22, "#f7c948")
+        texto(txAcao() + "!", f4.x, f4.y - 42, 12, "#f7c948")
+
+    if f4.msgT > 0:
+        lt = medir(f4.msg, 14) + 24
+        painel(W / 2 - lt / 2, 300, lt, 26)
+        texto(f4.msg, W / 2, 305, 14, "#f7c948")
+
+    desenharHudRecreio()
+
+def desenharHudRecreio():
+    painel(0, 0, W, HUD_H)
+    texto("ESCONDE-ESCONDE", 10, 5, 10, "#f3c39a", "left")
+    texto("ACHOU %d/%d" % (f4.achados, len(AMIGOS)), 10, 18, 17, "#f7c948", "left")
+
+    _local, dist = pistaAtual()
+    pista = PISTAS[0]
+    for q in PISTAS:
+        if dist <= q["d"]:
+            pista = q
+    texto("TÁ PERTO?", 196, 5, 10, "#f3c39a", "left")
+    texto(pista["txt"], 196, 18, 16, pista["cor"], "left")
+
+    for i in range(len(AMIGOS)):
+        achado = any(l.espiado and l.amigo == i for l in f4.locais)
+        sprite(SPR["carinha"], 400 + i * 22, 16, 2, AMIGOS[i]["cor"] if achado else CINZA)
+
+
+# ==========================================================================
+# FASE 6 — PEGA-PEGA NO QUINTAL DE CASA
+# ==========================================================================
+QUINTAL_Y = 46
+MOVEIS = [
+    dict(spr="arvore", x=76, y=166, esc=5),
+    dict(spr="casinhaCao", x=404, y=150, esc=4),
+    dict(spr="piscina", x=250, y=234, esc=5),
+    dict(spr="arbusto", x=70, y=300, esc=4),
+    dict(spr="arvore", x=410, y=294, esc=5),
+]
+
+f6 = NS()
+
+def iniciarQuintal():
+    abrirFase("FASE 6 — PEGA-PEGA NO QUINTAL", iniciarQuintal)
+    f6.x = 240.0
+    f6.y = 300.0
+    f6.dir = "cima"
+    f6.anim = 0.0
+    f6.andando = False
+    f6.tempo = 0.0
+    f6.msg = ""
+    f6.msgT = 0.0
+    sorte = lambda: (random.random() - 0.5) * 70
+
+    f6.fugitivos = [
+        NS(nome=CONFIG["nomeIrmao"], spr="thomas", vel=CONFIG["velThomas"],
+           x=150 + sorte(), y=130 + sorte(), pego=False, descanso=0.0, tDescanso=99.0,
+           anim=0.0, dir=1, esperto=False, ulDx=None, ulDy=None),
+        NS(nome=CONFIG["nomeTia"], spr="nuna", vel=CONFIG["velNunaFuga"],
+           x=350 + sorte(), y=250 + sorte(), pego=False,
+           descanso=0.0, tDescanso=CONFIG["descansoNuna"] + random.random() * 2,
+           anim=0.0, dir=-1, esperto=True, ulDx=None, ulDy=None),
+    ]
+    trocarEstado("QUINTAL")
+
+def msgF6(txt, dur=1.8):
+    f6.msg = txt
+    f6.msgT = dur
+
+def livreNoQuintal(px, py):
+    if px < 26 or px > W - 26 or py < QUINTAL_Y + 26 or py > H - 20:
+        return False
+    for m in MOVEIS:
+        lw = larg(SPR[m["spr"]]) * m["esc"] / 2
+        lh = len(SPR[m["spr"]]) * m["esc"] / 2
+        if abs(px - m["x"]) < lw - 4 and abs(py - m["y"]) < lh - 4:
+            return False
+    return True
+
+def atualizarQuintal(dt):
+    f6.tempo += dt
+    if f6.msgT > 0:
+        f6.msgT -= dt
+
+    # ------- o Tuti corre atrás -------
+    d = _direcao_atual()
+    f6.andando = False
+    if d:
+        f6.dir = d.nome
+        f6.x, f6.y, f6.andando = andarContornando(f6.x, f6.y, d, CONFIG["velPegador"] * dt, livreNoQuintal)
+    f6.anim = f6.anim + dt * 8 if f6.andando else 0.0
+
+    # ------- quem foge -------
+    for g in f6.fugitivos:
+        if g.pego:
+            continue
+
+        g.tDescanso -= dt
+        if g.tDescanso <= 0:
+            g.descanso = CONFIG["descansoDur"]
+            g.tDescanso = CONFIG["descansoNuna"] + 2
+            if g.esperto:
+                msgF6("A " + CONFIG["nomeTia"] + " PAROU! CORRE!", CONFIG["descansoDur"])
+        if g.descanso > 0:
+            g.descanso -= dt
+            g.anim = 0.0
+        else:
+            v = g.vel * dt
+            olhada = v * 8
+            melhorX, melhorY, melhorNota = 0.0, 0.0, -float("inf")
+            for a in range(16):
+                ang = (a / 16) * math.pi * 2
+                dx, dy = math.cos(ang), math.sin(ang)
+                nx, ny = g.x + dx * olhada, g.y + dy * olhada
+                if not livreNoQuintal(nx, ny):
+                    continue
+                nota = math.hypot(nx - f6.x, ny - f6.y)
+                folga = min(nx - 26, W - 26 - nx, ny - (QUINTAL_Y + 26), H - 20 - ny)
+                nota += min(folga, 100) * 0.9
+                if g.ulDx is not None:
+                    nota += (dx * g.ulDx + dy * g.ulDy) * 12
+                if nota > melhorNota:
+                    melhorNota = nota
+                    melhorX, melhorY = dx, dy
+            g.ulDx, g.ulDy = melhorX, melhorY
+            if livreNoQuintal(g.x + melhorX * v, g.y):
+                g.x += melhorX * v
+            if livreNoQuintal(g.x, g.y + melhorY * v):
+                g.y += melhorY * v
+            if melhorX != 0:
+                g.dir = -1 if melhorX < 0 else 1
+            g.anim += dt * 9
+
+        # pegou?
+        if math.hypot(g.x - f6.x, g.y - f6.y) < 24:
+            g.pego = True
+            jogo.pontos += 400
+            SFX.item()
+            msgF6("PEGOU " + ("A " if g.nome == CONFIG["nomeTia"] else "O ") + g.nome + "!", 2.2)
+
+    if all(g.pego for g in f6.fugitivos):
+        jogo.pontos += 800 + max(0, round((60 - f6.tempo) * 20))
+        mostrarTransicao(
+            "PEGOU TODO MUNDO!",
+            "O DIA FOI LONGO E JÁ ANOITECEU...",
+            "AGORA UM DESENHO NA SALA ANTES DE DORMIR!",
+            iniciarSala,
+        )
+
+def desenharQuintal():
+    ret("#7bb661", 0, QUINTAL_Y, W, H - QUINTAL_Y)
+    for y in range(QUINTAL_Y, H, 22):
+        ret("#6da555", 0, y, W, 3)
+
+    ret("#d9cfae", 0, QUINTAL_Y, W, 26)
+    ret("#5b3a1a", 200, QUINTAL_Y + 6, 40, 20)
+    for x in range(4, W, 22):
+        ret("#8b5a2b", x, H - 16, 12, 16)
+    ret("#8b5a2b", 0, H - 20, W, 5)
+
+    # varal
+    ret("#c8c2ad", 60, 88, 330, 3)
+    roupas = ["#f2a3c7", "#7fc4ff", "#f7c948", "#ffffff"]
+    for i in range(4):
+        ret(roupas[i], 96 + i * 74, 91, 26, 22 + (i % 2) * 6)
+
+    for m in MOVEIS:
+        spriteC(SPR[m["spr"]], m["x"], m["y"], m["esc"])
+
+    for g in f6.fugitivos:
+        if g.pego:
+            spr = SPR["nuna"] if g.spr == "nuna" else SPR["thomasBaixo0"]
+            spriteC(spr, g.x, g.y + 6, 2, {"S": "#f3c39a"})
+            painel(g.x - 30, g.y - 40, 60, 20, "#f2a3c7")
+            texto("HAHA!", g.x, g.y - 36, 11, "#f2a3c7")
+        else:
+            q = int(g.anim) % 2
+            if g.spr == "nuna":
+                spriteC(SPR["nuna"], g.x, g.y, 2, None, g.dir < 0)
+            else:
+                spriteC(SPR["thomasBaixo1"] if q else SPR["thomasBaixo0"], g.x, g.y, 2, None, g.dir < 0)
+            if g.descanso > 0:
+                painel(g.x - 26, g.y - 44, 52, 20, "#f7c948")
+                texto("UFA!", g.x, g.y - 40, 11, "#f7c948")
+
+    q = int(f6.anim) % 2
+    esp = False
+    if f6.dir == "cima":
+        spr = SPR["tutiCima1"] if q else SPR["tutiCima0"]
+    elif f6.dir == "baixo":
+        spr = SPR["tutiBaixo1"] if q else SPR["tutiBaixo0"]
+    else:
+        spr = SPR["tutiLado1"] if q else SPR["tutiLado0"]
+        esp = f6.dir == "esq"
+    spriteC(spr, f6.x, f6.y, 2, None, esp)
+
+    if f6.msgT > 0:
+        lt = medir(f6.msg, 14) + 24
+        painel(W / 2 - lt / 2, 300, lt, 26)
+        texto(f6.msg, W / 2, 305, 14, "#f7c948")
+
+    painel(0, 0, W, HUD_H)
+    texto("PEGA-PEGA!", 10, 5, 10, "#f3c39a", "left")
+    texto("VOCÊ É O PEGADOR", 10, 18, 15, "#f7c948", "left")
+    for i, g in enumerate(f6.fugitivos):
+        x = 236 + i * 118
+        ret_alpha((63, 163, 77, 90) if g.pego else (255, 255, 255, 20), x - 4, 8, 112, 28)
+        texto("PEGOU!" if g.pego else g.nome, x + 52, 15, 12, "#3fa34d" if g.pego else "#ffffff")
+    texto("%.1fs" % f6.tempo, 470, 4, 12, "#c8c2ad", "right")
+
+# ==========================================================================
+# FASE 7 — A NOITE NA SALA DE CASA
+# ==========================================================================
+PAREDE_Y = 300
+PISO = 318
+TV = NS(x=60, y=150, w=128, h=100, sx=68, sy=158, sw=112, sh=76)
+SOFA = NS(x=284, y=256, w=176)
+
+def mgBase():
+    return NS(t=0.0, coletados=0, invenc=0.0, brilhos=[], opaT=0.0, opaX=0.0, opaY=0.0)
+
+def mgVolta(v, n):
+    return ((v % n) + n) % n
+
+def mgFundo(cima, baixo):
+    gradiente_v(0, 0, MG_W, MG_H, ((0.0, cima), (1.0, baixo)))
+
+def mgPegou(m, x, y):
+    m.coletados += 1
+    jogo.pontos += 60
+    m.brilhos.append(NS(x=x, y=y, t=0.45))
+    SFX.item()
+
+def mgOpa(m, x, y):
+    if m.invenc > 0 or m.t < 1.2:
+        return False
+    m.invenc = 1.1
+    m.opaX, m.opaY, m.opaT = x, y, 0.9
+    jogo.pontos = max(0, jogo.pontos - 30)
+    SFX.dano()
+    tremer(0.3)
+    return True
+
+def mgAtualizarEfeitos(m, dt):
+    m.t += dt
+    m.invenc = max(0.0, m.invenc - dt)
+    if m.opaT > 0:
+        m.opaT -= dt
+    for b in m.brilhos:
+        b.t -= dt
+    m.brilhos = [b for b in m.brilhos if b.t > 0]
+
+def mgDesenharEfeitos(m):
+    for b in m.brilhos:
+        r = 8 + (0.45 - b.t) * 40
+        ret_borda("#f7c948", b.x - r, b.y - r, r * 2, r * 2, 3)
+    if m.opaT > 0:
+        lw = medir("OPA!", 20) + 20
+        painel(m.opaX - lw / 2, m.opaY - 52, lw, 28, "#d9463c")
+        texto("OPA!", m.opaX, m.opaY - 47, 20, "#d9463c")
+
+# ---------------- 1) O FOGUETE ----------------
+def capa_foguete(x, y, w, h):
+    ret("#101936", x, y, w, h)
+    for i in range(16):
+        ret("#ffffff" if i % 3 else "#f7c948",
+            x + int((i * 43 + i * i * 7) % w), y + int((i * 29 + i * i * 3) % h), 2, 2)
+    circulo("#e8e2c8", x + w - 14, y + 12, 7)
+    circulo("#101936", x + w - 17, y + 10, 6)
+    spriteC(SPR["foguete"], x + w / 2, y + h / 2 + math.sin(jogo.t * 3) * 3, max(2, round(h / 24)))
+
+def iniciar_foguete(m):
+    m.x = MG_W / 2
+    m.coisas = []
+    m.tMeteoro = 0.9
+    m.tEstrela = 0.5
+    m.estrelinhas = [NS(x=random.random() * MG_W, y=random.random() * MG_H,
+                        v=30 + random.random() * 80) for _ in range(44)]
+
+def atualizar_foguete(m, dt):
+    if teclas.get("ArrowLeft"):
+        m.x -= CONFIG["velFoguete"] * dt
+    if teclas.get("ArrowRight"):
+        m.x += CONFIG["velFoguete"] * dt
+    m.x = max(26, min(MG_W - 26, m.x))
+    y = MG_H - 52
+
+    for e in m.estrelinhas:
+        e.y += e.v * dt
+        if e.y > MG_H:
+            e.y = 0
+            e.x = random.random() * MG_W
+
+    m.tMeteoro -= dt
+    m.tEstrela -= dt
+    if m.tMeteoro <= 0:
+        m.coisas.append(NS(tipo="meteoro", x=34 + random.random() * (MG_W - 68), y=-24.0,
+                           v=145 + random.random() * 70, pego=False))
+        m.tMeteoro = 0.72 + random.random() * 0.45
+    if m.tEstrela <= 0:
+        m.coisas.append(NS(tipo="estrela", x=34 + random.random() * (MG_W - 68), y=-24.0,
+                           v=120, pego=False))
+        m.tEstrela = 0.85 + random.random() * 0.7
+
+    for c in m.coisas:
+        c.y += c.v * dt
+        if c.pego:
+            continue
+        d = math.hypot(c.x - m.x, c.y - y)
+        if c.tipo == "estrela":
+            if d < 32:
+                c.pego = True
+                mgPegou(m, c.x, c.y)
+        elif d < 28 and mgOpa(m, c.x, c.y):
+            c.pego = True
+    m.coisas = [c for c in m.coisas if not c.pego and c.y < MG_H + 40]
+
+def desenhar_foguete(m):
+    mgFundo("#0b1030", "#2a2350")
+    for e in m.estrelinhas:
+        ret("#ffffff", int(e.x), int(e.y), 2, 2)
+    circulo("#e8e2c8", MG_W - 54, 44, 22)
+    circulo("#0b1030", MG_W - 64, 40, 20)
+
+    for c in m.coisas:
+        if c.tipo == "estrela":
+            spriteC(SPR["estrela"], c.x, c.y, 3)
+        else:
+            spriteC(SPR["meteoro"], c.x, c.y, 4)
+
+    y = MG_H - 52
+    for i in range(3):
+        ret("#f7c948" if i % 2 else "#e8853a", m.x - 8 + random.random() * 16, y + 24 + i * 6, 5, 7)
+    pisca = m.invenc > 0 and int(m.invenc * 12) % 2 == 0
+    if not pisca:
+        spriteC(SPR["foguete"], m.x, y, 4)
+    mgDesenharEfeitos(m)
+
+# ---------------- 2) OS DINOSSAUROS ----------------
+def capa_dino(x, y, w, h):
+    ret("#e8853a", x, y, w, h)
+    ret("#d9463c", x, y, w, h * 0.42)
+    poligono("#8a4a3a", [(x + w - 52, y + h - 12), (x + w - 26, y + h * 0.24), (x + w, y + h - 12)])
+    ret("#3fa34d", x, y + h - 12, w, 12)
+    ret("#276b32", x, y + h - 12, w, 3)
+    spriteC(SPR["dino"], x + w / 2 - 6, y + h - 24, max(1, round(h / 26)))
+
+def iniciar_dino(m):
+    m.y = 0.0
+    m.vy = 0.0
+    m.noChao = True
+    m.obst = []
+    m.tObst = 1.2
+    m.rolagem = 0.0
+    m.tropeco = 0.0
+    m.montanhas = [NS(x=i * 130, alt=46 + random.random() * 54, vulcao=i == 2) for i in range(5)]
+
+def atualizar_dino(m, dt):
+    CHAO = MG_H - 46
+    m.rolagem += CONFIG["velChaoDino"] * dt
+
+    if (foiApertada("ArrowUp") or foiApertada("Space")) and m.noChao:
+        m.vy = -CONFIG["puloDino"]
+        m.noChao = False
+        SFX.turbo()
+    m.vy += CONFIG["gravidadeDino"] * dt
+    m.y += m.vy * dt
+    if m.y > 0:
+        m.y = 0.0
+        m.vy = 0.0
+        m.noChao = True
+    if m.tropeco > 0:
+        m.tropeco -= dt
+
+    m.tObst -= dt
+    if m.tObst <= 0:
+        fruta = random.random() < 0.45
+        m.obst.append(NS(tipo="fruta" if fruta else "pedra", x=MG_W + 30.0,
+                         y=CHAO - 74.0 if fruta else CHAO - 14.0, pego=False))
+        m.tObst = 0.9 + random.random() * 0.7
+
+    dinoX, dinoY = 96, CHAO + m.y - 24
+    for o in m.obst:
+        o.x -= CONFIG["velChaoDino"] * dt
+        if o.pego:
+            continue
+        if abs(o.x - dinoX) < 28 and abs(o.y - dinoY) < 30:
+            if o.tipo == "fruta":
+                o.pego = True
+                mgPegou(m, o.x, o.y)
+            elif mgOpa(m, o.x, o.y):
+                o.pego = True
+                m.tropeco = 0.5
+    m.obst = [o for o in m.obst if not o.pego and o.x > -40]
+
+def desenhar_dino(m):
+    CHAO = MG_H - 46
+    mgFundo("#d9463c", "#f0a05a")
+    for mo in m.montanhas:
+        x = mgVolta(mo.x - m.rolagem * 0.25, MG_W + 200) - 100
+        poligono("#8a4a3a", [(x - 60, CHAO), (x, CHAO - mo.alt), (x + 60, CHAO)])
+        if mo.vulcao:
+            ret("#f7c948", x - 7, CHAO - mo.alt, 14, 10)
+            for i in range(3):
+                s = (m.t * 18 + i * 16) % 48
+                ret_alpha((200, 194, 173, 128), x - 6 + math.sin(s / 8) * 6, CHAO - mo.alt - 8 - s, 9, 9)
+    ret("#8b5a2b", 0, CHAO, MG_W, MG_H - CHAO)
+    ret("#3fa34d", 0, CHAO, MG_W, 8)
+    for i in range(12):
+        x = mgVolta(i * 60 - m.rolagem, MG_W + 60) - 30
+        ret("#276b32", x, CHAO + 2, 16, 4)
+
+    for o in m.obst:
+        if o.tipo == "fruta":
+            spriteC(SPR["banana"], o.x, o.y, 4)
+        else:
+            spriteC(SPR["pedra"], o.x, o.y, 4)
+
+    dinoY = CHAO + m.y - 24
+    pisca = m.invenc > 0 and int(m.invenc * 12) % 2 == 0
+    if not pisca:
+        tomba = math.sin(m.t * 40) * 4 if m.tropeco > 0 else 0
+        spriteC(SPR["dino"], 96 + tomba, dinoY, 4)
+    mgDesenharEfeitos(m)
+
+# ---------------- 3) O FUNDO DO MAR ----------------
+def capa_mar(x, y, w, h):
+    ret("#3f6fd1", x, y, w, h)
+    ret("#7fc4ff", x, y, w, h * 0.35)
+    ret("#c2a06a", x, y + h - 10, w, 10)
+    ret("#3fa34d", x + 8, y + h - 24, 5, 16)
+    ret("#3fa34d", x + w - 16, y + h - 28, 5, 20)
+    spriteC(SPR["peixe"], x + w / 2 + 16, y + h / 2, max(1, round(h / 30)))
+    spriteC(SPR["mergulhador"], x + w / 2 - 16, y + h / 2, max(1, round(h / 24)))
+
+def iniciar_mar(m):
+    m.x = MG_W / 2
+    m.y = MG_H / 2
+    m.dir = 1
+    m.peixes = []
+    m.tPeixe = 0.4
+    m.aguas = []
+    cantos = [(90, 66), (256, 216), (382, 104)]
+    for i, (ax, ay) in enumerate(cantos):
+        m.aguas.append(NS(x=float(ax), y=float(ay),
+                          vx=(1 if i % 2 else -1) * (44 + i * 8),
+                          vy=(-1 if i % 2 else 1) * (32 + i * 6)))
+    m.bolhas = [NS(x=random.random() * MG_W, y=random.random() * MG_H,
+                   v=22 + random.random() * 45, r=2 + random.random() * 3) for _ in range(20)]
+
+def atualizar_mar(m, dt):
+    v = CONFIG["velMergulho"] * dt
+    if teclas.get("ArrowLeft"):
+        m.x -= v
+        m.dir = -1
+    if teclas.get("ArrowRight"):
+        m.x += v
+        m.dir = 1
+    if teclas.get("ArrowUp"):
+        m.y -= v
+    if teclas.get("ArrowDown"):
+        m.y += v
+    m.x = max(26, min(MG_W - 26, m.x))
+    m.y = max(26, min(MG_H - 42, m.y))
+
+    for b in m.bolhas:
+        b.y -= b.v * dt
+        if b.y < 0:
+            b.y = MG_H
+            b.x = random.random() * MG_W
+
+    m.tPeixe -= dt
+    if m.tPeixe <= 0:
+        daEsquerda = random.random() < 0.5
+        m.peixes.append(NS(
+            x=-24.0 if daEsquerda else MG_W + 24.0,
+            y=40 + random.random() * (MG_H - 100),
+            v=(1 if daEsquerda else -1) * (75 + random.random() * 55),
+            pego=False))
+        m.tPeixe = 0.7 + random.random() * 0.6
+    for p in m.peixes:
+        p.x += p.v * dt
+        if not p.pego and math.hypot(p.x - m.x, p.y - m.y) < 28:
+            p.pego = True
+            mgPegou(m, p.x, p.y)
+    m.peixes = [p for p in m.peixes if not p.pego and -50 < p.x < MG_W + 50]
+
+    for a in m.aguas:
+        a.x += a.vx * dt
+        a.y += a.vy * dt
+        if a.x < 28 or a.x > MG_W - 28:
+            a.vx *= -1
+        if a.y < 28 or a.y > MG_H - 52:
+            a.vy *= -1
+        if math.hypot(a.x - m.x, a.y - m.y) < 28:
+            mgOpa(m, a.x, a.y)
+
+def desenhar_mar(m):
+    mgFundo("#3f6fd1", "#0e2a55")
+    for b in m.bolhas:
+        ret_alpha((127, 196, 255, 64), int(b.x), int(b.y), int(b.r), int(b.r))
+
+    ret("#c2a06a", 0, MG_H - 26, MG_W, 26)
+    for i in range(9):
+        x = 24 + i * 52
+        gomos = 4 + ((i * 7) % 4)
+        for g in range(gomos):
+            p = g / gomos
+            ret("#3fa34d" if g % 2 else "#276b32",
+                x + math.sin(m.t * 2 + i + g * 0.6) * (3 + p * 7), MG_H - 30 - g * 9, 6, 10)
+
+    for p in m.peixes:
+        spriteC(SPR["peixe"], p.x, p.y, 3, None, p.v > 0)
+    for a in m.aguas:
+        flut = math.sin(m.t * 3 + a.x) * 3
+        spriteC(SPR["aguaViva"], a.x, a.y + flut, 4)
+
+    pisca = m.invenc > 0 and int(m.invenc * 12) % 2 == 0
+    if not pisca:
+        spriteC(SPR["mergulhador"], m.x, m.y, 4, None, m.dir < 0)
+    mgDesenharEfeitos(m)
+
+DESENHOS = [
+    dict(nome="O FOGUETE", dica="← → DESVIA DOS METEOROS E PEGA AS ESTRELAS",
+         capa=capa_foguete, iniciar=iniciar_foguete,
+         atualizar=atualizar_foguete, desenhar=desenhar_foguete),
+    dict(nome="OS DINOSSAUROS", dica="↑ OU %A PRA PULAR AS PEDRAS",
+         capa=capa_dino, iniciar=iniciar_dino,
+         atualizar=atualizar_dino, desenhar=desenhar_dino),
+    dict(nome="O FUNDO DO MAR", dica="SETAS PRA NADAR, FUJA DAS ÁGUAS-VIVAS",
+         capa=capa_mar, iniciar=iniciar_mar,
+         atualizar=atualizar_mar, desenhar=desenhar_mar),
+]
+
+f7 = NS()
+
+def iniciarSala():
+    abrirFase("FASE 7 — A NOITE NA SALA", iniciarSala)
+    f7.etapa = 0
+    f7.tt = 0.0
+    f7.msg = ""
+    f7.msgT = 0.0
+
+    f7.desenho = 0
+    f7.mini = None
+    f7.zoom = 0.0
+    f7.saindo = False
+    f7.sono = 0.0
+
+    f7.tutiX = 232.0
+    f7.olhando = -1
+    f7.andando = False
+    f7.pertoSofa = False
+
+    f7.deitado = False
+    f7.nunaX = -50.0
+    f7.coberto = False
+    f7.luz = 0.0
+    f7.tvLigada = True
+    trocarEstado("SALA")
+
+def msgF7(txt, dur=1.8):
+    f7.msg = txt
+    f7.msgT = dur
+
+def atualizarSala(dt):
+    f7.tt += dt
+    if f7.msgT > 0:
+        f7.msgT -= dt
+
+    if f7.etapa == 0:
+        # ---- ESCOLHER ----
+        if foiApertada("ArrowRight"):
+            f7.desenho = (f7.desenho + 1) % len(DESENHOS)
+            SFX.coleta()
+        if foiApertada("ArrowLeft"):
+            f7.desenho = (f7.desenho + len(DESENHOS) - 1) % len(DESENHOS)
+            SFX.coleta()
+        if foiApertada("Space"):
+            f7.mini = mgBase()
+            DESENHOS[f7.desenho]["iniciar"](f7.mini)
+            f7.etapa = 1
+            f7.zoom = 0.0
+            f7.saindo = False
+            f7.sono = 0.0
+            SFX.fase()
+            msgF7("COMEÇOU " + DESENHOS[f7.desenho]["nome"] + "!", 2)
+
+    elif f7.etapa == 1:
+        # ---- DENTRO DO DESENHO ----
+        if f7.saindo:
+            f7.zoom = max(0.0, f7.zoom - dt / 0.5)
+            if f7.zoom <= 0:
+                f7.etapa = 2
+                f7.tt = 0.0
+                msgF7("QUE SONO...", 2.4)
+            return
+        if f7.zoom < 1:
+            f7.zoom = min(1.0, f7.zoom + dt / 0.5)
+            return
+
+        mgAtualizarEfeitos(f7.mini, dt)
+        DESENHOS[f7.desenho]["atualizar"](f7.mini, dt)
+        f7.sono = min(100.0, f7.sono + (100 / CONFIG["duracaoEpisodio"]) * dt)
+        if f7.sono >= 100:
+            f7.saindo = True
+            jogo.pontos += 300
+            SFX.fase()
+            msgF7("FIM DO EPISÓDIO!", 2.2)
+
+    elif f7.etapa == 2:
+        # ---- ANDAR ATÉ O SOFÁ ----
+        v = CONFIG["velQuarto"] * dt
+        if teclas.get("ArrowLeft"):
+            f7.tutiX -= v
+            f7.olhando = -1
+        if teclas.get("ArrowRight"):
+            f7.tutiX += v
+            f7.olhando = 1
+        f7.tutiX = max(60, min(430, f7.tutiX))
+        f7.andando = bool(teclas.get("ArrowLeft") or teclas.get("ArrowRight"))
+
+        f7.pertoSofa = abs(f7.tutiX - (SOFA.x + SOFA.w / 2)) < 70
+        if f7.pertoSofa and foiApertada("Space"):
+            f7.deitado = True
+            f7.etapa = 3
+            f7.tt = 0.0
+            SFX.fase()
+
+    else:
+        # ---- A TIA COBRE ELE E APAGA A LUZ ----
+        if f7.tt > 1.2 and not f7.coberto:
+            f7.nunaX = min(252.0, f7.nunaX + 78 * dt)
+        if f7.nunaX >= 252 and not f7.coberto:
+            f7.coberto = True
+            jogo.pontos += 500
+            SFX.item()
+            msgF7("BOA NOITE, " + CONFIG["nomeMenino"] + "!", 3.2)
+        if f7.coberto:
+            f7.luz = min(1.0, f7.luz + dt * 0.45)
+            if f7.luz > 0.3:
+                f7.tvLigada = False
+        if f7.luz >= 1 and (foiApertada("Space") or f7.tt > 12):
+            jogo.pontos += 1000
+            SFX.vitoria()
+            criarConfete()
+            trocarEstado("VITORIA")
+
+# ---------- desenho da sala ----------
+_scanlines = None
+
+def _pegar_scanlines():
+    global _scanlines
+    if _scanlines is None:
+        _scanlines = pygame.Surface((MG_W, MG_H), pygame.SRCALPHA)
+        for ly in range(0, MG_H, 5):
+            _scanlines.fill((0, 0, 0, 26), (0, ly, MG_W, 2))
+    return _scanlines
+
+def desenharDesenhoEmTela(p):
+    global alvo
+    x = TV.sx + (16 - TV.sx) * p
+    y = TV.sy + (56 - TV.sy) * p
+    w = TV.sw + (MG_W - TV.sw) * p
+    h = TV.sh + (MG_H - TV.sh) * p
+
+    # o joguinho desenha em coordenadas locais numa superfície própria,
+    # que depois é escalada — o mesmo truque do ctx.scale() original
+    alvo = mg_surf
+    DESENHOS[f7.desenho]["desenhar"](f7.mini)
+    alvo.blit(_pegar_scanlines(), (0, 0))
+    alvo = tela
+
+    escalado = pygame.transform.scale(mg_surf, (max(1, int(w)), max(1, int(h))))
+    tela.blit(escalado, (int(x), int(y)))
+
+    ret_borda("#12131a", x - 3, y - 3, w + 6, h + 6, 6)
+    ret_borda("#5d6272", x - 5, y - 5, w + 10, h + 10, 2)
+
+def desenharMenuDesenhos():
+    painel(24, 50, 432, 96, "#f7c948")
+    texto("QUAL DESENHO VOCÊ QUER VER?", W / 2, 54, 11, "#f7c948")
+
+    for i, d in enumerate(DESENHOS):
+        cx0, cy0, cw, ch = 108 + i * 132, 72, 108, 44
+        sel = i == f7.desenho
+        ret("#f7c948" if sel else "#3a3f4c", cx0 - cw / 2 - 3, cy0 - 3, cw + 6, ch + 20)
+        d["capa"](cx0 - cw / 2, cy0, cw, ch)
+        texto(d["nome"], cx0, cy0 + ch + 3, 9, "#12131a" if sel else "#c8c2ad", "center", None)
+        if sel and int(jogo.t * 5) % 2 == 0:
+            ret("#f7c948", cx0 - cw / 2 - 14, cy0 + ch / 2 - 3, 8, 8)
+            ret("#f7c948", cx0 + cw / 2 + 6, cy0 + ch / 2 - 3, 8, 8)
+
+def desenharTV():
+    ret("#4a3b52", 108, 250, 32, 58)
+    ret("#5b3a1a", 76, 308, 96, 10)
+    ret("#3a3f4c", TV.x, TV.y, TV.w, TV.h)
+    ret("#12131a", TV.x + 4, TV.y + 4, TV.w - 8, TV.h - 8)
+
+    alvo.set_clip(pygame.Rect(TV.sx, TV.sy, TV.sw, TV.sh))
+    if f7.tvLigada:
+        DESENHOS[f7.desenho]["capa"](TV.sx, TV.sy, TV.sw, TV.sh)
+    else:
+        ret("#1b1d26", TV.sx, TV.sy, TV.sw, TV.sh)
+    alvo.set_clip(None)
+
+    ret("#3fa34d" if f7.tvLigada else "#5d6272", TV.x + TV.w - 16, TV.y + TV.h - 12, 6, 6)
+
+SOFA_ASSENTO = 290
+
+def desenharSofa():
+    s = SOFA
+    ret("#5c3f6b", s.x, s.y, s.w, 46)
+    ret("#6f4d80", s.x + 12, s.y + 8, s.w - 24, 30)
+    ret("#f2a3c7", s.x + s.w - 60, s.y + 10, 30, 26)
+    ret("#6f4d80", s.x + 20, SOFA_ASSENTO, s.w - 40, 18)
+    ret("#7d5990", s.x + 22, SOFA_ASSENTO + 2, s.w - 44, 3)
+    ret("#5c3f6b", s.x, 282, 22, PISO - 282)
+    ret("#5c3f6b", s.x + s.w - 22, 282, 22, PISO - 282)
+    ret("#4b3358", s.x + 20, 308, s.w - 40, PISO - 308)
+
+def desenharSala():
+    ret("#6e5a7a", 0, HUD_H, W, PAREDE_Y - HUD_H)
+    for x in range(0, W, 30):
+        ret("#65526f", x, HUD_H, 3, PAREDE_Y - HUD_H)
+    ret("#4a3b52", 0, PAREDE_Y - 8, W, 8)
+    ret("#8b5a2b", 0, PAREDE_Y, W, H - PAREDE_Y)
+    for x in range(0, W, 44):
+        ret("#6b421d", x, PAREDE_Y, 2, H - PAREDE_Y)
+    ret("#a8402f", 92, 326, 232, 28)
+    ret("#d9463c", 98, 330, 220, 20)
+    ret("#f7c948", 112, 338, 192, 4)
+
+    # janela da noite
+    ret("#5b3a1a", 322, 88, 100, 72)
+    ret("#101936", 328, 94, 88, 60)
+    for i in range(10):
+        ret("#f7c948", 330 + (i * 31) % 84, 96 + (i * 17) % 54, 2, 2)
+    ret("#fff2b0", 392, 100, 14, 14)
+    ret("#101936", 388, 100, 8, 14)
+    ret("#5b3a1a", 370, 94, 4, 60)
+    ret("#5b3a1a", 328, 120, 88, 4)
+
+    # quadrinho
+    ret("#8b5a2b", 206, 108, 62, 50)
+    ret("#e8dcc0", 210, 112, 54, 42)
+    sprite(SPR["carinha"], 218, 122, 3, {"H": "#7a4a24"})
+    sprite(SPR["coracao"], 244, 126, 2)
+
+    desenharTV()
+    desenharSofa()
+
+    if f7.deitado:
+        cabeca, corpoX = SOFA.x + 40, SOFA.x + 62
+        if f7.coberto:
+            ret("#3f6fd1", corpoX, SOFA_ASSENTO - 24, 84, 24)
+            ret("#7fc4ff", corpoX, SOFA_ASSENTO - 24, 84, 6)
+            ret("#2b4f9e", corpoX, SOFA_ASSENTO - 9, 84, 4)
+        else:
+            ret("#3fa34d", corpoX, SOFA_ASSENTO - 22, 46, 22)
+            ret("#223a72", corpoX + 42, SOFA_ASSENTO - 19, 32, 19)
+            ret("#12131a", corpoX + 72, SOFA_ASSENTO - 16, 12, 16)
+        spriteC(SPR["tutiDormindo"], cabeca, SOFA_ASSENTO - 16, 4)
+        for i in range(3):
+            p = (jogo.t * 0.6 + i / 3) % 1
+            texto("Z", cabeca - 10 + p * 24, SOFA_ASSENTO - 36 - p * 46, 10 + i * 3, "#ffffff")
+    else:
+        q = int(jogo.t * 8) % 2 if f7.andando else 0
+        olhoMole = {"k": "#a97e52"} if f7.etapa == 2 else None
+        spriteC(SPR["tutiLado1"] if q else SPR["tutiLado0"], f7.tutiX, PISO - 34, 4, olhoMole, f7.olhando == -1)
+        if f7.etapa == 0:
+            spriteC(SPR["controle"], f7.tutiX - 24, PISO - 36, 3)
+
+    if f7.etapa == 3 and f7.nunaX > -40:
+        spriteC(SPR["nuna"], f7.nunaX, PISO - 42, 4)
+        if not f7.coberto:
+            ret("#3f6fd1", f7.nunaX + 20, PISO - 52, 30, 20)
+            ret("#7fc4ff", f7.nunaX + 20, PISO - 52, 30, 6)
+
+    if f7.etapa == 0:
+        desenharMenuDesenhos()
+
+    if f7.etapa == 1:
+        ret_alpha((9, 11, 20, int(153 * f7.zoom)), 0, 0, W, H)
+        desenharDesenhoEmTela(f7.zoom)
+
+    if f7.etapa == 2 and not f7.pertoSofa and int(jogo.t * 4) % 2 == 0:
+        sx = SOFA.x + SOFA.w / 2
+        ret("#f7c948", sx - 4, 186, 8, 12)
+        ret("#f7c948", sx - 10, 198, 20, 6)
+        ret("#f7c948", sx - 6, 204, 12, 5)
+        ret("#f7c948", sx - 2, 209, 4, 4)
+    if f7.etapa == 2 and f7.pertoSofa:
+        painel(f7.tutiX - 52, PISO - 96, 104, 22, "#f7c948")
+        texto(txAcao() + " = DEITAR", f7.tutiX, PISO - 92, 11, "#f7c948")
+
+    if f7.luz > 0:
+        ret_alpha((9, 11, 20, int(168 * f7.luz)), 0, 0, W, H)
+
+    if f7.msgT > 0:
+        lt = medir(f7.msg, 15) + 26
+        painel(W / 2 - lt / 2, H - 40, lt, 28)
+        texto(f7.msg, W / 2, H - 34, 15, "#f7c948")
+
+    if f7.luz >= 1 and int(jogo.t * 2) % 2 == 0:
+        painel(W / 2 - 130, 326, 260, 26)
+        texto(txAcao() + " = FIM DA MISSÃO", W / 2, 331, 14, "#f7c948")
+
+    desenharHudSala()
+
+def desenharHudSala():
+    painel(0, 0, W, HUD_H)
+    d = DESENHOS[f7.desenho]
+    titulos = ["ESCOLHE O DESENHO!", d["nome"], "BORA PRO SOFÁ!", "BOA NOITE!"]
+    dicas = [
+        "← → OLHA OS DESENHOS, " + txAcao() + " ESCOLHE",
+        d["dica"].replace("%A", txAcao()),
+        "← → ANDA, " + txAcao() + " DEITA NO SOFÁ",
+        "DURMA BEM, " + CONFIG["nomeMenino"] + "!",
+    ]
+    texto("FASE 7 — A NOITE NA SALA", 10, 5, 10, "#f3c39a", "left")
+    texto(titulos[f7.etapa], 10, 18, 15, "#f7c948", "left")
+    texto(dicas[f7.etapa], 470, 5, 10, "#c8c2ad", "right")
+
+    if f7.mini:
+        texto("PEGOU: %d" % f7.mini.coletados, 178, 21, 12, "#f2a3c7", "left")
+    if f7.etapa == 1:
+        texto("SONO", 268, 22, 10, "#f3c39a", "left")
+        barra(302, 20, 164, 16, f7.sono / 100, "#7fc4ff")
+
+
+# ==========================================================================
+# TELAS
+# ==========================================================================
+def fundoNoite():
+    gradiente_v(0, 0, W, H, ((0.0, "#101936"), (0.55, "#26355f"), (1.0, "#7a4f6a")))
+    for i in range(40):
+        x, y = (i * 97) % W, (i * 53) % 150
+        ret("#f7c948" if i % 3 == 0 else "#ffffff", x, y, 2, 2)
+
+def desenharTitulo():
+    fundoNoite()
+    CHAO = 322
+    ret("#2c5f37", 0, 286, W, H - 286)
+    ret("#8b8b7a", 0, 292, W, 8)
+    ret("#3a3f4c", 0, 300, W, 44)
+    for x in range(10, W, 60):
+        ret("#f0e6c0", x, CHAO - 1, 26, 3)
+
+    texto("TIA MOTORA", W / 2, 26, 38, "#f7c948")
+    texto("EM MISSÃO!", W / 2, 66, 24, "#f2a3c7")
+    texto("O JOGO DO " + CONFIG["nomeMenino"], W / 2, 96, 13, "#ffffff")
+
+    spriteC(SPR["carroLado"], 110, CHAO - 18, 3)
+    spriteC(SPR["nuna"], 246, CHAO - 31, 3)
+    spriteC(SPR["tutiBaixo0"], 300, CHAO - 25, 3)
+
+    painel(300, 120, 172, 86)
+    texto("COMO JOGAR", 386, 126, 12, "#f7c948")
+    texto("SETAS = ANDAR", 386, 146, 11)
+    texto(txAcao() + " = AÇÃO", 386, 162, 11)
+    texto("START = PAUSA / SELECT = SOM", 386, 178, 9, "#c8c2ad")
+
+    if int(jogo.t * 2) % 2 == 0:
+        texto("APERTE " + txAcao() + " PRA COMEÇAR", W / 2, 338, 15, "#f7c948")
+
+def desenharIntervalo():
+    fundoNoite()
+    CHAO = 326
+    desenharEscola(90, 138, 300, 152)
+    ret("#8b8b7a", 0, 290, W, H - 290)
+    ret("#9a9a88", 0, 290, W, 4)
+    for x in range(0, W, 44):
+        ret("#7d7d6c", x, 294, 2, H - 294)
+
+    texto("PARTE 1 CUMPRIDA!", W / 2, 12, 24, "#f7c948")
+    textoCoracao("CHEGAMOS NA ESCOLA!", W / 2, 42, 14, "#f2a3c7")
+
+    painel(96, 64, 288, 28)
+    texto("PONTOS: " + str(int(jogo.pontos)), W / 2, 70, 15, "#ffffff")
+
+    total = len(f1.amigos)
+    pegos = amigosPegos()
+    painel(120, 96, 240, 26, "#f2a3c7")
+    texto("AMIGOS QUE VOCÊ PEGOU: %d/%d" % (pegos, total), W / 2, 102, 12, "#f2a3c7")
+
+    spriteC(SPR["nuna"], 128, CHAO - 21, 2)
+    spriteC(SPR["tutiBaixo0"], 166, CHAO - 17, 2)
+    n = 0
+    for a in f1.amigos:
+        if not a.pego:
+            continue
+        spriteC(SPR["tutiBaixo0"], 204 + n * 32, CHAO - 17, 2, AMIGOS[a.idx]["cor"])
+        n += 1
+
+    if int(jogo.t * 2) % 2 == 0:
+        texto("AGORA OS DESAFIOS LÁ DENTRO! " + txAcao(), W / 2, 336, 13, "#f7c948")
+
+confete = []
+
+def criarConfete():
+    del confete[:]
+    cores = ["#f7c948", "#f2a3c7", "#3fa34d", "#7fc4ff", "#d9463c", "#ffffff"]
+    for _i in range(90):
+        confete.append(NS(
+            x=random.random() * W, y=-random.random() * H,
+            vy=40 + random.random() * 90, vx=(random.random() - 0.5) * 30,
+            cor=random.choice(cores),
+            t=random.random() * 6,
+        ))
+
+def atualizarConfete(dt):
+    for c in confete:
+        c.y += c.vy * dt
+        c.x += math.sin(c.t + jogo.t * 3) * 18 * dt + c.vx * dt
+        if c.y > H + 8:
+            c.y = -8.0
+            c.x = random.random() * W
+
+def desenharCasaDeLado(x, y, w, h):
+    ret("#d9cfae", x, y + 20, w, h - 20)
+    ret("#a8402f", x - 12, y, w + 24, 22)
+    ret("#c9503a", x - 6, y + 20, w, 5)
+    ret("#5b3a1a", x + 22, y + h - 56, 40, 56)
+    ret("#f7c948", x + 54, y + h - 32, 4, 4)
+    jx, jy = x + w - 88, y + 46
+    ret("#5b3a1a", jx - 4, jy - 4, 76, 60)
+    ret("#f7c948", jx, jy, 68, 52)
+    ret("#6f4d80", jx + 8, jy + 24, 52, 20)
+    ret("#3f6fd1", jx + 22, jy + 20, 34, 12)
+    ret("#f3c39a", jx + 12, jy + 18, 12, 12)
+    ret("#7a4a24", jx + 12, jy + 14, 12, 5)
+    for i in range(3):
+        p = (jogo.t * 0.5 + i / 3) % 1
+        ret("#ffffff", jx + 26 + p * 14, jy + 14 - p * 12, 3 + i, 3 + i)
+    ret("#5b3a1a", jx + 32, jy, 4, 52)
+
+def desenharVitoria():
+    fundoNoite()
+    CHAO = 328
+    desenharCasaDeLado(130, 176, 220, 124)
+    ret("#2c5f37", 0, 296, W, H - 296)
+    ret("#8b8b7a", 0, 302, W, H - 302)
+    spriteC(SPR["nuna"], 72, CHAO - 21, 2)
+    spriteC(SPR["carroLado"], 406, CHAO - 12, 2)
+    for c in confete:
+        ret(c.cor, int(c.x), int(c.y), 5, 5)
+
+    texto("MISSÃO", W / 2, 10, 36, "#f7c948")
+    texto("CUMPRIDA!", W / 2, 46, 36, "#f7c948")
+    textoCoracao("BOA NOITE, " + CONFIG["nomeMenino"] + "! ATÉ AMANHÃ!", W / 2, 88, 13, "#f2a3c7")
+
+    painel(96, 110, 288, 48)
+    texto("PONTUAÇÃO FINAL", W / 2, 115, 11, "#c8c2ad")
+    texto(str(int(jogo.pontos)).zfill(6), W / 2, 130, 24, "#f7c948")
+
+    if int(jogo.t * 2) % 2 == 0:
+        texto(txAcao() + " = JOGAR DE NOVO", W / 2, 162, 14, "#ffffff")
+
+    painel(56, 332, 368, 26, "#f2a3c7")
+    textoCoracao("CONQUISTA: " + CONFIG["nomeTia"] + " DO ANO", W / 2 - 8, 337, 13, "#f2a3c7")
+
+def desenharGameOver():
+    fundoNoite()
+    texto("OPA!", W / 2, 70, 40, "#d9463c")
+    texto("TENTA DE NOVO, " + CONFIG["nomeMenino"] + "!", W / 2, 122, 18, "#f7c948")
+    texto(jogo.nomeFase, W / 2, 152, 12, "#c8c2ad")
+
+    painel(96, 186, 288, 26, "#f2a3c7")
+    texto("A TIA TÁ AQUI, VAMO DE NOVO!", W / 2, 191, 12, "#f2a3c7")
+
+    CHAO = 306
+    ret("#2c5f37", 0, 288, W, H - 288)
+    ret("#8b8b7a", 0, 294, W, H - 294)
+    spriteC(SPR["nuna"], 200, CHAO - 31, 3)
+    spriteC(SPR["tutiBaixo0"], 262, CHAO - 25, 3)
+
+    if int(jogo.t * 2) % 2 == 0:
+        texto("APERTE " + txAcao(), W / 2, 330, 16, "#f7c948")
+
+def desenharPausa():
+    ret_alpha((9, 11, 20, 190), 0, 0, W, H)
+    texto("PAUSADO", W / 2, 140, 34, "#f7c948")
+    texto("APERTE START PRA VOLTAR", W / 2, 190, 14)
+
+# ==========================================================================
+# LOOP PRINCIPAL
+# ==========================================================================
+ATUALIZAR = {
+    "MANHA": atualizarManha,
+    "FASE1": atualizarFase1,
+    "FASE2": atualizarFase2,
+    "RECREIO": atualizarRecreio,
+    "QUINTAL": atualizarQuintal,
+    "SALA": atualizarSala,
+}
+
+DESENHAR = {
+    "TITULO": desenharTitulo,
+    "MANHA": desenharManha,
+    "FASE1": desenharFase1,
+    "INTERVALO": desenharIntervalo,
+    "FASE2": desenharFase2,
+    "RECREIO": desenharRecreio,
+    "QUINTAL": desenharQuintal,
+    "SALA": desenharSala,
+    "TRANSICAO": desenharTransicao,
+    "VITORIA": desenharVitoria,
+    "GAMEOVER": desenharGameOver,
+}
+
+def atualizar_jogo(dt):
+    # pausa / som
+    if foiApertada("KeyP") and jogo.estado in ("MANHA", "FASE1", "FASE2", "RECREIO", "QUINTAL", "SALA"):
+        jogo.pausado = not jogo.pausado
+    if foiApertada("KeyM"):
+        som.ligado = not som.ligado
+        if som.ligado:
+            SFX.coleta()
+
+    if jogo.pausado:
+        return
+    jogo.t += dt
+    jogo.tremor = max(0.0, jogo.tremor - dt * 1.6)
+
+    estado = jogo.estado
+    if estado == "TITULO":
+        if foiApertada("Space"):
+            jogo.pontos = 0
+            SFX.fase()
+            iniciarManha()
+    elif estado == "INTERVALO":
+        if foiApertada("Space"):
+            iniciarFase2()
+    elif estado == "TRANSICAO":
+        if jogo.t > 0.5 and foiApertada("Space"):
+            trans.proxima()
+    elif estado == "VITORIA":
+        atualizarConfete(dt)
+        if jogo.t > 1 and foiApertada("Space"):
+            jogo.pontos = 0
+            trocarEstado("TITULO")
+    elif estado == "GAMEOVER":
+        if jogo.t > 0.6 and foiApertada("Space"):
+            jogo.pontos = jogo.pontosFase
+            if jogo.reiniciarFase:
+                jogo.reiniciarFase()
+    elif estado in ATUALIZAR:
+        ATUALIZAR[estado](dt)
+
+def desenhar_jogo():
+    global alvo
+    alvo = tela
+    tela.fill(col("#0b0d16"))
+    DESENHAR[jogo.estado]()
+    if jogo.pausado:
+        desenharPausa()
+    if not som.ligado:
+        texto("SOM OFF", 470, H - 16, 10, "#5d6272", "right")
+
+def rodar():
+    rodando = True
+    while rodando:
+        dt = min(0.05, clock.tick(60) / 1000.0)
+        rodando = processar_eventos()
+
+        atualizar_jogo(dt)
+        desenhar_jogo()
+        apertadas.clear()
+
+        # ---- manda pra tela do aparelho, escalado ----
+        quadro = tela
+        if jogo.tremor > 0:
+            # o tremor desloca o quadro inteiro, como o ctx.translate original
+            dxt = (random.random() - 0.5) * jogo.tremor * 14
+            dyt = (random.random() - 0.5) * jogo.tremor * 14
+            tremido = pygame.Surface((W, H))
+            tremido.fill(col("#0b0d16"))
+            tremido.blit(tela, (int(dxt), int(dyt)))
+            quadro = tremido
+        screen.fill((11, 13, 22))
+        pygame.transform.scale(quadro, (DEST_W, DEST_H), _quadro_escalado)
+        screen.blit(_quadro_escalado, (DEST_X, DEST_Y))
+        pygame.display.flip()
+
+    pygame.quit()
+
+_quadro_escalado = pygame.Surface((DEST_W, DEST_H))
+
+if __name__ == "__main__":
+    rodar()
